@@ -376,9 +376,56 @@ liveToggle.addEventListener('click', () => {
 });
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(error => {
-    console.warn('Offline download unavailable.', error);
+  const workers = navigator.serviceWorker;
+  let controller = workers.controller;
+  let reloading = false;
+
+  workers.addEventListener('controllerchange', () => {
+    const nextController = workers.controller;
+
+    if (!nextController || nextController === controller || reloading) return;
+    const isUpdate = controller !== null;
+    controller = nextController;
+
+    // The first worker can claim this page without replacing a running release.
+    if (!isUpdate) return;
+
+    const reloadWhenActivated = () => {
+      if (
+        nextController.state !== 'activated' ||
+        workers.controller !== nextController ||
+        reloading
+      )
+        return;
+
+      reloading = true;
+      window.location.reload();
+    };
+
+    nextController.addEventListener('statechange', reloadWhenActivated);
+    reloadWhenActivated();
   });
+
+  void workers
+    .register('./sw.js', { updateViaCache: 'none' })
+    .then(registration => {
+      function checkForUpdate() {
+        if (!registration.active || registration.installing) return;
+
+        void registration.update().catch(() => {
+          // Keep using the installed release if the server is unreachable.
+        });
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) checkForUpdate();
+      });
+      window.addEventListener('online', checkForUpdate);
+      checkForUpdate();
+    })
+    .catch(error => {
+      console.warn('Offline download unavailable.', error);
+    });
 }
 
 document.addEventListener('visibilitychange', () => {

@@ -33,13 +33,19 @@ test('the production worker serves the complete install from cache with the netw
   const scope = 'https://field-hours.example/field-hours/';
   const handlers = new Map<EventName, (event: WorkerEvent) => void>();
   const cache = new Map<string, Buffer>();
-  let network = true;
+  let network = false;
+  let downloadComplete = false;
+  let skippedWaiting = false;
   let claimed = false;
 
   const worker = {
     registration: { scope },
     addEventListener: (name: EventName, handler: (event: WorkerEvent) => void) => {
       handlers.set(name, handler);
+    },
+    skipWaiting: () => {
+      assert.equal(downloadComplete, true);
+      skippedWaiting = true;
     },
     clients: {
       claim: () => {
@@ -54,7 +60,8 @@ test('the production worker serves the complete install from cache with the netw
 
       return {
         async addAll(requests: Request[]) {
-          assert.equal(network, true);
+          if (!network) throw new Error('The network is disabled');
+
           await Promise.all(
             requests.map(async ({ url }) => {
               assert.ok(url.startsWith(scope));
@@ -62,6 +69,7 @@ test('the production worker serves the complete install from cache with the netw
               cache.set(url, await readFile(join(dist, path)));
             }),
           );
+          downloadComplete = true;
         },
         match: (url: string) => cache.get(url),
       };
@@ -104,7 +112,12 @@ test('the production worker serves the complete install from cache with the netw
   const request = (url: string, mode: RequestMode = 'cors') =>
     dispatch('fetch', { request: { method: 'GET', mode, url } });
 
+  await assert.rejects(dispatch('install'), /The network is disabled/);
+  assert.equal(skippedWaiting, false);
+
+  network = true;
   await dispatch('install');
+  assert.equal(skippedWaiting, true);
   await dispatch('activate');
   assert.equal(claimed, true);
   network = false;
