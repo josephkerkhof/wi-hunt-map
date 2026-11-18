@@ -166,6 +166,15 @@ function minuteLabel(minutes: number) {
   return minutes === 1 ? '1 minute' : `${minutes} minutes`;
 }
 
+function durationLabel(totalMinutes: number) {
+  if (totalMinutes < 60) return minuteLabel(totalMinutes);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const hourLabel = hours === 1 ? '1 hour' : `${hours} hours`;
+
+  return minutes === 0 ? hourLabel : `${hourLabel} ${minuteLabel(minutes)}`;
+}
+
 function renderLiveHours(now: Date) {
   if (!selection) return;
   const status = liveHours(selection, now);
@@ -176,10 +185,10 @@ function renderLiveHours(now: Date) {
     setScheduleStatus(
       status.state,
       'Before scheduled hours',
-      `Opens in ${minuteLabel(status.minutes)}.`,
+      `Opens in ${durationLabel(status.minutes)}.`,
     );
   } else if (status.state === 'within') {
-    const remaining = status.minutes === 0 ? 'Less than 1 minute' : minuteLabel(status.minutes);
+    const remaining = status.minutes === 0 ? 'Less than 1 minute' : durationLabel(status.minutes);
     setScheduleStatus(status.state, 'Within scheduled hours', `${remaining} remaining.`);
   } else {
     setScheduleStatus('closed', 'Closed for today', '');
