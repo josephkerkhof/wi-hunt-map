@@ -52,15 +52,20 @@ test('updates live status at the published opening and closing times', () => {
     state: 'within',
     minutes: 0,
   });
-  assert.equal(liveHours(choice, new Date('2026-11-21T22:34:00Z'))?.state, 'closed');
+  assert.deepEqual(liveHours(choice, new Date('2026-11-21T22:34:00Z')), {
+    state: 'closed',
+  });
 });
 
-test('counts elapsed minutes overnight across the fall clock change', () => {
+test('reports only today’s window across the fall clock change', () => {
   const choice = { area: 'north', zone: 'A' } as const;
 
   assert.deepEqual(liveHours(choice, new Date('2026-10-31T22:58:00Z')), {
     state: 'closed',
-    minutes: 782,
+  });
+  assert.deepEqual(liveHours(choice, new Date('2026-11-01T05:00:00Z')), {
+    state: 'waiting',
+    minutes: 420,
   });
   assert.deepEqual(liveHours(choice, new Date('2026-11-01T11:59:30Z')), {
     state: 'waiting',
@@ -73,7 +78,6 @@ test('does not project a countdown beyond the bundled tables', () => {
 
   assert.deepEqual(liveHours(choice, new Date('2027-01-31T23:15:00Z')), {
     state: 'closed',
-    minutes: null,
   });
   assert.equal(liveHours(choice, new Date('2027-02-01T06:00:00Z')), null);
 });

@@ -9,17 +9,13 @@ import {
   isZone,
   liveHours,
   locate,
-  offsetDate,
   wisconsinDate,
   type LocationChoice,
   type LocationError,
 } from './hours';
-import { setupZoneMap } from './zone-map';
+import { isOnMap, setupZoneMap, type DeviceLocation } from './zone-map';
 
-type Selection = LocationChoice & {
-  source: 'Saved location' | 'GPS' | 'Map selection' | 'Manual selection';
-  point?: Point;
-};
+type Selection = LocationChoice & { point?: Point };
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
@@ -41,8 +37,13 @@ function $(id: string, type: new () => HTMLElement = HTMLElement): HTMLElement {
   return node;
 }
 
-const dateInput = $('date', HTMLInputElement);
+const todayDate = $('today-date', HTMLTimeElement);
+const sheetToggle = $('sheet-toggle', HTMLButtonElement);
+const sheetHours = $('sheet-hours');
+const sheetDetails = $('sheet-details');
+const hoursPanel = $('hours-panel');
 const gpsButton = $('gps', HTMLButtonElement);
+const mapView = $('map-view', HTMLButtonElement);
 const zoneDialog = $('zone-dialog', HTMLDialogElement);
 const areaInput = $('area', HTMLSelectElement);
 const zoneInput = $('zone', HTMLSelectElement);
@@ -56,8 +57,8 @@ const storageKey = 'field-hours.location';
 
 const dateFormat = new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
-  weekday: 'long',
-  month: 'long',
+  weekday: 'short',
+  month: 'short',
   day: 'numeric',
   year: 'numeric',
 });
@@ -69,8 +70,6 @@ const coverageFormat = new Intl.DateTimeFormat('en-US', {
   year: 'numeric',
 });
 
-const mapHint = 'Select a spot on the map or choose a zone manually.';
-
 const boundaryMessages = {
   accuracy: 'Location accuracy is too low. Try GPS again or choose your zone.',
   boundary: 'This point is near a boundary. Confirm your area and zone on the DNR map.',
@@ -80,10 +79,10 @@ const boundaryMessages = {
 
 let selection = loadLocation();
 let today = wisconsinDate();
-let date = today;
 let showLive = true;
 let locating = false;
-let locationRequest = 0;
+let deviceLocation: DeviceLocation | null = null;
+let centeredOnDevice = false;
 let installPrompt: BeforeInstallPromptEvent | null = null;
 
 function isStoredLocation(value: unknown): value is LocationChoice {
@@ -108,7 +107,7 @@ function loadLocation(): Selection | null {
     if (isStoredLocation(saved)) {
       const { area, zone, county } = saved;
 
-      return { area, zone, county, source: 'Saved location' };
+      return { area, zone, county };
     }
   } catch {
     // Storage can be unavailable in private browsing.
@@ -117,8 +116,8 @@ function loadLocation(): Selection | null {
   return null;
 }
 
-function useLocation(choice: LocationChoice, source: Selection['source'], point?: Point) {
-  selection = { ...choice, source, point };
+function useLocation(choice: LocationChoice, point?: Point) {
+  selection = { ...choice, point };
   const { area, zone, county } = choice;
 
   try {
@@ -128,7 +127,6 @@ function useLocation(choice: LocationChoice, source: Selection['source'], point?
   }
 
   locationMessage('');
-  $('map-guide').textContent = mapHint;
   renderLocation();
   renderHours();
 }
@@ -138,41 +136,24 @@ function locationMessage(message: string) {
 }
 
 function reportLocationFailure(message: string) {
-  const previous = selection ? ' The window still uses the location shown above.' : '';
+  const previous = selection ? ' Today’s hours still use the selected zone shown above.' : '';
   locationMessage(message + previous);
 }
 
-function shiftDate(days: -1 | 1) {
-  if (days < 0 && date <= FIRST_DATE) return;
-
-  if (days > 0 && date >= LAST_DATE) return;
-
-  if (date > LAST_DATE && days < 0) return setDate(LAST_DATE);
-
-  if (date < FIRST_DATE && days > 0) return setDate(FIRST_DATE);
-  setDate(offsetDate(date, days));
-}
-
-function setDate(value: string) {
-  date = value;
-  renderHours();
-}
-
-function writeTime(id: 'opening' | 'closing', value: number | undefined) {
-  const parts = value === undefined ? { time: '—', period: '' } : clockParts(value);
+function writeTime(id: 'opening' | 'closing', value: number) {
+  const parts = clockParts(value);
   $(id).textContent = parts.time;
   $(`${id}-period`).textContent = parts.period;
 }
 
 function setScheduleStatus(
-  state: 'location' | 'unavailable' | 'waiting' | 'within' | 'closed',
+  state: 'unavailable' | 'waiting' | 'within' | 'closed',
   heading: string,
   message: string,
 ) {
   if (statusMessage.textContent !== message) statusMessage.textContent = message;
 
   if (scheduleStatus.dataset.state === state) return;
-  $('status-location').hidden = state !== 'location';
   statusMessage.hidden = !message;
   scheduleStatus.dataset.state = state;
   statusHeading.textContent = heading;
@@ -188,83 +169,81 @@ function renderLiveHours(now: Date) {
   const status = liveHours(selection, now);
 
   if (!status) return;
-  const { state, minutes } = status;
 
-  if (state === 'waiting') {
-    setScheduleStatus(state, 'Before scheduled hours', `Opens in ${minuteLabel(minutes)}.`);
-  } else if (state === 'within') {
-    const remaining = minutes === 0 ? 'Less than 1 minute' : minuteLabel(minutes);
-    setScheduleStatus(state, 'Within scheduled hours', `${remaining} remaining.`);
+  if (status.state === 'waiting') {
+    setScheduleStatus(
+      status.state,
+      'Before scheduled hours',
+      `Opens in ${minuteLabel(status.minutes)}.`,
+    );
+  } else if (status.state === 'within') {
+    const remaining = status.minutes === 0 ? 'Less than 1 minute' : minuteLabel(status.minutes);
+    setScheduleStatus(status.state, 'Within scheduled hours', `${remaining} remaining.`);
   } else {
-    const next =
-      minutes === null
-        ? 'The bundled schedule ends today.'
-        : `Tomorrow’s scheduled hours open in ${minuteLabel(minutes)}.`;
-
-    setScheduleStatus('closed', 'Closed for today', next);
+    setScheduleStatus('closed', 'Closed for today', '');
   }
 }
 
 function renderHours(now = new Date()) {
-  const selected = $('selected-date', HTMLTimeElement);
-  selected.dateTime = date;
-  const dateLabel = dateFormat.format(new Date(`${date}T00:00:00Z`));
+  today = wisconsinDate(now);
+  todayDate.dateTime = today;
+  todayDate.textContent = dateFormat.format(new Date(`${today}T00:00:00Z`));
+  const hours = dailyHours(today, selection);
+  const unavailable = today < FIRST_DATE || today > LAST_DATE || (selection !== null && !hours);
+  hoursPanel.hidden = !hours;
+  liveToggle.hidden = !hours;
+  scheduleStatus.hidden = !unavailable && (!hours || !showLive);
 
-  if (selected.textContent !== dateLabel) selected.textContent = dateLabel;
-  const covered = date >= FIRST_DATE && date <= LAST_DATE;
-  dateInput.value = covered ? date : '';
-  $('previous').setAttribute('aria-disabled', String(date <= FIRST_DATE));
-  $('next').setAttribute('aria-disabled', String(date >= LAST_DATE));
-  $('today').setAttribute('aria-current', date === today ? 'date' : 'false');
-
-  const hours = dailyHours(date, selection);
-  writeTime('opening', hours?.opens);
-  writeTime('closing', hours?.closes);
-  $('hours-panel').setAttribute('aria-hidden', String(!hours));
-  $('time-context').textContent = selection
-    ? `${AREAS[selection.area]} area · Zone ${selection.zone} · Central time`
-    : 'Wisconsin Central time';
-
-  const live = date === today && hours !== null;
-  liveToggle.hidden = !live;
-  scheduleStatus.hidden = hours !== null && (!live || !showLive);
+  if (hours) {
+    writeTime('opening', hours.opens);
+    writeTime('closing', hours.closes);
+  }
 
   if (scheduleStatus.hidden) {
+    delete scheduleStatus.dataset.state;
     scheduleAnnouncement.textContent = '';
-  } else if (!covered || (selection && !hours)) {
+  } else if (unavailable) {
     setScheduleStatus(
       'unavailable',
-      'Hours unavailable',
-      'The bundled DNR tables do not cover this date.',
+      'Hours unavailable today',
+      'Check the Wisconsin DNR schedule.',
     );
-  } else if (!selection) {
-    setScheduleStatus('location', 'Location needed', '');
-  } else if (live) {
+  } else {
     renderLiveHours(now);
   }
 }
 
+function renderMap() {
+  const location = deviceLocation && isOnMap(deviceLocation.point) ? deviceLocation : null;
+  $('device-key').hidden = !location;
+  $('selection-key').hidden = !selection?.point;
+  mapView.hidden = !location;
+  mapView.textContent = centeredOnDevice ? 'All zones' : 'Center on me';
+  updateMap(selection, location, centeredOnDevice);
+}
+
 function renderLocation() {
   if (selection) {
-    const { county, area, zone, source } = selection;
+    const { county, area, zone } = selection;
     const place = county ? `${county} County · ` : '';
     const detail = $('location-detail');
-    const text = `${place}${AREAS[area]} area · Zone ${zone} · ${source}`;
+    const text = `${place}${AREAS[area]} area · Zone ${zone}`;
 
     if (detail.textContent !== text) detail.textContent = text;
   }
 
   gpsButton.setAttribute('aria-disabled', String(locating));
   $('gps-label').textContent = locating ? 'Finding location…' : 'Use my location';
-  updateMap(selection);
-}
+  const deviceDetail = $('device-detail');
+  deviceDetail.hidden = !deviceLocation;
 
-function finishGps(request: number) {
-  if (request !== locationRequest) return false;
-  locating = false;
-  renderLocation();
+  if (deviceLocation) {
+    const meters = Math.ceil(deviceLocation.accuracy);
+    const radius = meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${meters} m`;
+    deviceDetail.textContent = `Your device reported an accuracy radius of ${radius}.`;
+  }
 
-  return true;
+  renderMap();
 }
 
 gpsButton.addEventListener('click', () => {
@@ -276,21 +255,42 @@ gpsButton.addEventListener('click', () => {
     return;
   }
 
-  const request = ++locationRequest;
+  const selectedAtStart = selection;
   locating = true;
   locationMessage('');
   renderLocation();
   navigator.geolocation.getCurrentPosition(
     position => {
-      if (!finishGps(request)) return;
       const { longitude, latitude, accuracy } = position.coords;
+      const point: Point = [longitude, latitude];
+      const canUseFix = [longitude, latitude, accuracy].every(Number.isFinite) && accuracy >= 0;
+      deviceLocation = canUseFix ? { point, accuracy } : null;
+      locating = false;
+      const useForZone = selection === selectedAtStart;
+      centeredOnDevice = useForZone && canUseFix && isOnMap(point);
+
+      if (!useForZone) {
+        renderLocation();
+
+        return;
+      }
+
       const choice = locate(longitude, latitude, accuracy);
 
-      if ('error' in choice) reportLocationFailure(boundaryMessages[choice.error]);
-      else useLocation(choice, 'GPS', [longitude, latitude]);
+      if ('error' in choice) {
+        renderLocation();
+        reportLocationFailure(boundaryMessages[choice.error]);
+      } else {
+        useLocation(choice);
+      }
     },
     error => {
-      if (!finishGps(request)) return;
+      locating = false;
+      deviceLocation = null;
+      centeredOnDevice = false;
+      renderLocation();
+
+      if (selection !== selectedAtStart) return;
 
       const message =
         error.code === 1
@@ -307,14 +307,17 @@ const updateMap = setupZoneMap($('zone-map', HTMLCanvasElement), (point, accurac
   const choice = locate(...point, accuracy);
 
   if ('error' in choice) {
-    $('map-guide').textContent = boundaryMessages[choice.error];
+    reportLocationFailure(boundaryMessages[choice.error]);
 
     return;
   }
 
-  locationRequest += 1;
-  locating = false;
-  useLocation(choice, 'Map selection', point);
+  useLocation(choice, point);
+});
+
+mapView.addEventListener('click', () => {
+  centeredOnDevice = !centeredOnDevice;
+  renderMap();
 });
 
 $('manual').addEventListener('click', () => {
@@ -329,10 +332,8 @@ $('zone-form').addEventListener('submit', event => {
   const zone = zoneInput.value;
 
   if (!isArea(area) || !isZone(zone)) return;
-  locationRequest += 1;
-  locating = false;
   zoneDialog.close();
-  useLocation({ area, zone }, 'Manual selection');
+  useLocation({ area, zone });
 });
 
 document.querySelectorAll<HTMLButtonElement>('button[data-close]').forEach(button => {
@@ -341,35 +342,20 @@ document.querySelectorAll<HTMLButtonElement>('button[data-close]').forEach(butto
   if (dialogId) button.addEventListener('click', () => $(dialogId, HTMLDialogElement).close());
 });
 
-$('previous').addEventListener('click', () => shiftDate(-1));
-
-$('next').addEventListener('click', () => shiftDate(1));
-
-$('today').addEventListener('click', () => {
-  today = wisconsinDate();
-  setDate(today);
-});
-
-dateInput.addEventListener('change', () => {
-  const { value } = dateInput;
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) setDate(value);
-  else dateInput.value = date;
+sheetToggle.addEventListener('click', () => {
+  const expanded = sheetDetails.hidden;
+  sheetDetails.hidden = !expanded;
+  sheetHours.hidden = !expanded;
+  sheetToggle.setAttribute('aria-expanded', String(expanded));
+  $('sheet-toggle-label').textContent = expanded ? 'Hide details' : 'Show details';
 });
 
 function updateToday() {
   const now = new Date();
   const current = wisconsinDate(now);
 
-  if (current === today) {
-    if (!liveToggle.hidden && showLive) renderLiveHours(now);
-
-    return;
-  }
-
-  if (date === today) date = current;
-  today = current;
-  renderHours(now);
+  if (current !== today) renderHours(now);
+  else if (!liveToggle.hidden && showLive) renderLiveHours(now);
 }
 
 liveToggle.addEventListener('click', () => {
@@ -422,10 +408,6 @@ $('install').addEventListener('click', async () => {
     installDialog.showModal();
   }
 });
-
-dateInput.min = FIRST_DATE;
-
-dateInput.max = LAST_DATE;
 
 const firstDay = coverageFormat.format(new Date(`${FIRST_DATE}T00:00:00Z`));
 const lastDay = coverageFormat.format(new Date(`${LAST_DATE}T00:00:00Z`));

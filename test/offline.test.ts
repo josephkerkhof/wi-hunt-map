@@ -123,7 +123,7 @@ test('the production worker serves the complete install from cache with the netw
   const index = cache.get(scope);
   assert.ok(index);
   assert.equal(await request(scope + '?opened=offline', 'navigate'), index);
-  assert.equal(await request(scope + '#location-heading', 'navigate'), index);
+  assert.equal(await request(scope + '#main', 'navigate'), index);
   assert.equal(await request(scope + 'index.html', 'navigate'), index);
 
   for (const [, path] of index.toString('utf8').matchAll(/\b(?:src|href)="([^"]+)"/g)) {

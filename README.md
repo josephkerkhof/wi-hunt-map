@@ -1,6 +1,6 @@
 # Field Hours
 
-Field Hours looks up Wisconsin DNR deer shooting hours for a date and shooting hours zone. The app runs in the browser. It uses the phone’s location on request and saves the selected county, area, and zone on that device. Coordinates are used in memory during the session.
+Field Hours shows today’s Wisconsin DNR deer shooting hours for the selected zone. The map and hours work in the browser. **Use my location** requests a fix and marks it with a blue dot and accuracy ring, including when you need to confirm the zone manually. The app saves the selected county, area, and zone on the device. Coordinates stay in memory during the session.
 
 ## Run locally
 

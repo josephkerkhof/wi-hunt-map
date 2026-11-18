@@ -20,7 +20,7 @@
     <header class="site-header">
       <div class="shell header-inner">
         <a class="brand" href="./">
-          <img src="./assets/mark.png" width="40" height="40" alt="" />
+          <img src="./assets/mark.png" width="36" height="36" alt="" />
           <span>Field Hours</span>
         </a>
         <button class="button button-outline" id="install" type="button">
@@ -30,161 +30,146 @@
       </div>
     </header>
 
-    <main id="main" tabindex="-1">
-      <div class="page-intro">
-        <div class="shell">
-          <h1>Wisconsin deer shooting hours</h1>
-          <p>Find daily opening and closing times by DNR area and zone.</p>
+    <main class="map-workspace" id="main" tabindex="-1">
+      <h1 class="sr-only">Wisconsin deer shooting hours</h1>
+
+      <section class="map-stage" aria-labelledby="map-heading">
+        <div class="map-toolbar">
+          <div>
+            <h2 id="map-heading">Wisconsin zones</h2>
+            <p id="map-guide">Tap a spot to select a zone.</p>
+          </div>
+          <button class="button button-outline" id="map-view" type="button" hidden>
+            All zones
+          </button>
         </div>
-      </div>
+        <div class="map-frame">
+          <canvas
+            id="zone-map"
+            role="img"
+            aria-label="Wisconsin map of shooting hours zones A through F"
+            aria-describedby="map-alternative"
+          ></canvas>
+        </div>
+        <p class="sr-only" id="map-alternative">
+          Use the location buttons below the map to select an area and zone.
+        </p>
+        <ul class="map-legend" aria-label="Map legend">
+          <li><span class="swatch north" aria-hidden="true"></span> Northern</li>
+          <li><span class="swatch south" aria-hidden="true"></span> Southern</li>
+          <li><span class="swatch meridian" aria-hidden="true"></span> Zone boundary</li>
+          <li id="device-key" hidden>
+            <span class="swatch device" aria-hidden="true"></span> You are here
+          </li>
+          <li id="selection-key" hidden>
+            <span class="swatch selected" aria-hidden="true"></span> Selected spot
+          </li>
+        </ul>
+      </section>
 
-      <div class="shell dashboard">
-        <div class="hours-column">
-          <section class="panel" aria-labelledby="hours-heading">
-            <div class="panel-content">
-              <div class="date-row">
-                <div>
-                  <h2 id="hours-heading">Daily hours</h2>
-                  <time id="selected-date" aria-live="polite"></time>
-                </div>
-                <div class="date-controls" role="group" aria-label="Browse dates">
-                  <button type="button" id="previous" class="date-button" aria-label="Previous day">
-                    <span class="chevron back" aria-hidden="true"></span>
-                  </button>
-                  <button type="button" id="today" class="date-button">Today</button>
-                  <button type="button" id="next" class="date-button" aria-label="Next day">
-                    <span class="chevron" aria-hidden="true"></span>
-                  </button>
-                </div>
-              </div>
-
-              <div class="notice schedule-status" id="schedule-status" data-state="location">
-                <span class="status-icon" aria-hidden="true"></span>
-                <div>
-                  <h3 id="status-heading">Location needed</h3>
-                  <p id="status-location">
-                    <a href="#location-heading">Choose a hunt location</a> to see daily hours.
-                  </p>
-                  <p id="status-message" hidden></p>
-                </div>
-              </div>
-              <p class="sr-only" id="schedule-announcement" role="status"></p>
-
-              <dl class="hours-panel" id="hours-panel" aria-hidden="true">
-                <div class="reading">
-                  <dt>Opens</dt>
-                  <dd><span id="opening">—</span> <span id="opening-period"></span></dd>
-                </div>
-                <div class="reading">
-                  <dt>Closes</dt>
-                  <dd><span id="closing">—</span> <span id="closing-period"></span></dd>
-                </div>
-              </dl>
-              <div class="hours-context">
-                <p id="time-context">Wisconsin Central time</p>
-                <button
-                  type="button"
-                  class="text-button"
-                  id="toggle-live"
-                  aria-controls="schedule-status"
-                  aria-expanded="true"
-                  hidden
-                >
-                  Hide live status
-                </button>
-              </div>
-              <noscript>
-                <p class="notice no-script">Enable JavaScript to look up daily hours.</p>
-              </noscript>
-            </div>
-            <div class="card-bottom">
-              <label for="date">Jump to a date</label>
-              <input type="date" id="date" aria-describedby="coverage" />
-            </div>
-          </section>
-
-          <section class="panel panel-content" aria-labelledby="location-heading">
-            <h2 id="location-heading" tabindex="-1">Hunt location</h2>
-            <p class="section-description" id="location-detail" role="status">
-              Use GPS or choose your DNR area and zone.
-            </p>
-            <div class="location-actions">
-              <button
-                type="button"
-                class="button button-primary"
-                id="gps"
-                aria-describedby="gps-hint"
-              >
-                <span class="gps-icon" aria-hidden="true"></span>
-                <span id="gps-label">Use my location</span>
-              </button>
-              <button type="button" class="button button-outline" id="manual">Choose zone</button>
-            </div>
-            <p class="hint" id="gps-hint">Field Hours uses your GPS coordinates on this device.</p>
-            <p class="notice location-message" id="location-message" role="status"></p>
-          </section>
+      <section class="hours-sheet" aria-labelledby="hours-heading">
+        <div class="sheet-heading">
+          <div>
+            <h2 id="hours-heading">Today’s hours</h2>
+            <p class="date-line"><time id="today-date"></time> <span>· Central time</span></p>
+          </div>
+          <button
+            class="text-button sheet-toggle"
+            id="sheet-toggle"
+            type="button"
+            aria-controls="sheet-hours sheet-details"
+            aria-expanded="false"
+          >
+            <span id="sheet-toggle-label">Show details</span>
+            <span class="chevron" aria-hidden="true"></span>
+          </button>
         </div>
 
-        <section class="panel map-card" aria-labelledby="map-heading">
-          <div class="map-heading">
-            <h2 id="map-heading">Shooting hours zones</h2>
-            <p class="section-description" id="map-guide" role="status">
-              Select a spot on the map or choose a zone manually.
-            </p>
+        <p class="location-detail" id="location-detail" role="status">Select a hunt location.</p>
+        <div class="notice schedule-status" id="schedule-status" hidden>
+          <span class="status-icon" aria-hidden="true"></span>
+          <div>
+            <h3 id="status-heading"></h3>
+            <p id="status-message" hidden></p>
           </div>
-          <div class="map-frame">
-            <canvas
-              id="zone-map"
-              role="img"
-              aria-label="Wisconsin map of shooting hours zones A through F"
-              aria-describedby="map-guide"
-            ></canvas>
+        </div>
+        <p class="sr-only" id="schedule-announcement" role="status"></p>
+
+        <div id="sheet-hours" hidden>
+          <dl class="hours-panel" id="hours-panel" hidden>
+            <div class="reading">
+              <dt>Opens</dt>
+              <dd><span id="opening"></span> <span id="opening-period"></span></dd>
+            </div>
+            <div class="reading">
+              <dt>Closes</dt>
+              <dd><span id="closing"></span> <span id="closing-period"></span></dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="location-actions">
+          <button type="button" class="button button-primary" id="gps" aria-describedby="gps-hint">
+            <span class="gps-icon" aria-hidden="true"></span>
+            <span id="gps-label">Use my location</span>
+          </button>
+          <button type="button" class="button button-outline" id="manual">Choose zone</button>
+        </div>
+        <p class="sr-only" id="gps-hint">Field Hours uses your coordinates on this device.</p>
+        <p class="notice location-message" id="location-message" role="status"></p>
+
+        <div class="sheet-details" id="sheet-details" hidden>
+          <p class="hint" id="device-detail" hidden></p>
+          <button
+            class="text-button"
+            id="toggle-live"
+            type="button"
+            aria-controls="schedule-status"
+            aria-expanded="true"
+            hidden
+          >
+            Hide live status
+          </button>
+          <div class="schedule-resources">
+            <p>Check DNR season dates and local restrictions for your hunt.</p>
+            <p id="coverage"></p>
+            <nav aria-label="Wisconsin DNR resources">
+              <ul class="resource-links">
+                <li>
+                  <a
+                    href="https://widnr.widen.net/s/mvmqkfqdxx/2023-hunting-hours-map"
+                    target="_blank"
+                    rel="noopener"
+                    >DNR zone map <span aria-hidden="true">↗</span
+                    ><span class="sr-only"> (opens in a new tab)</span></a
+                  >
+                </li>
+                <li>
+                  <a href="https://dnr.wisconsin.gov/topic/hunt/deer" target="_blank" rel="noopener"
+                    >DNR deer regulations <span aria-hidden="true">↗</span
+                    ><span class="sr-only"> (opens in a new tab)</span></a
+                  >
+                </li>
+                <li>
+                  <a
+                    href="https://dnr.wisconsin.gov/topic/Hunt/regulations/OnlineHuntingRegulations/ShootingHoursCalculatingShootingHours"
+                    target="_blank"
+                    rel="noopener"
+                    >How hours are calculated <span aria-hidden="true">↗</span
+                    ><span class="sr-only"> (opens in a new tab)</span></a
+                  >
+                </li>
+              </ul>
+            </nav>
           </div>
-          <ul class="map-legend" aria-label="Map legend">
-            <li><span class="swatch north" aria-hidden="true"></span> Northern</li>
-            <li><span class="swatch south" aria-hidden="true"></span> Southern</li>
-            <li><span class="swatch meridian" aria-hidden="true"></span> Zone boundary</li>
-          </ul>
-          <div class="map-footer">
-            <a
-              href="https://widnr.widen.net/s/mvmqkfqdxx/2023-hunting-hours-map"
-              target="_blank"
-              rel="noopener"
-              >Official DNR zone map <span aria-hidden="true">↗</span
-              ><span class="sr-only"> (opens in a new tab)</span></a
-            >
-          </div>
-        </section>
-      </div>
+        </div>
+        <noscript>
+          <p class="notice no-script">
+            Enable JavaScript to use the map and look up today’s hours.
+          </p>
+        </noscript>
+      </section>
     </main>
-
-    <footer class="site-footer">
-      <div class="shell footer-inner">
-        <div>
-          <p id="coverage"></p>
-          <p>Check DNR season dates and local restrictions for your hunt.</p>
-        </div>
-        <nav aria-label="Wisconsin DNR resources">
-          <ul class="footer-links">
-            <li>
-              <a href="https://dnr.wisconsin.gov/topic/hunt/deer" target="_blank" rel="noopener"
-                >DNR deer regulations <span aria-hidden="true">↗</span
-                ><span class="sr-only"> (opens in a new tab)</span></a
-              >
-            </li>
-            <li>
-              <a
-                href="https://dnr.wisconsin.gov/topic/Hunt/regulations/OnlineHuntingRegulations/ShootingHoursCalculatingShootingHours"
-                target="_blank"
-                rel="noopener"
-                >How hours are calculated <span aria-hidden="true">↗</span
-                ><span class="sr-only"> (opens in a new tab)</span></a
-              >
-            </li>
-          </ul>
-        </nav>
-      </div>
-    </footer>
 
     <dialog id="zone-dialog" aria-labelledby="zone-dialog-title">
       <form id="zone-form">

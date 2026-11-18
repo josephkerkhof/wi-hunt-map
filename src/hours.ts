@@ -94,13 +94,6 @@ export function wisconsinDate(now = new Date()) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-export function offsetDate(date: string, days: number) {
-  const day = new Date(`${date}T00:00:00Z`);
-  day.setUTCDate(day.getUTCDate() + days);
-
-  return day.toISOString().slice(0, 10);
-}
-
 export function isArea(value: unknown): value is Area {
   return typeof value === 'string' && Object.hasOwn(AREAS, value);
 }
@@ -139,9 +132,7 @@ function scheduledTime(date: string, minutes: number) {
   return Date.parse(`${date}T00:00:00${offset.value.slice(3)}`) + minutes * minuteMs;
 }
 
-type LiveHours =
-  | { state: 'waiting' | 'within'; minutes: number }
-  | { state: 'closed'; minutes: number | null };
+type LiveHours = { state: 'waiting' | 'within'; minutes: number } | { state: 'closed' };
 
 export function liveHours(selection: LocationChoice, now = new Date()): LiveHours | null {
   const date = wisconsinDate(now);
@@ -160,14 +151,7 @@ export function liveHours(selection: LocationChoice, now = new Date()): LiveHour
     return { state: 'within', minutes: Math.floor((closes - current) / minuteMs) };
   }
 
-  const tomorrow = offsetDate(date, 1);
-  const nextHours = dailyHours(tomorrow, selection);
-
-  const minutes = nextHours
-    ? Math.ceil((scheduledTime(tomorrow, nextHours.opens) - current) / minuteMs)
-    : null;
-
-  return { state: 'closed', minutes };
+  return { state: 'closed' };
 }
 
 export function clockParts(minutes: number) {
