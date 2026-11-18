@@ -1,0 +1,9 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Dev" type="ShConfigurationType">
+    <option name="SCRIPT_TEXT" value="PATH=&quot;$PATH:/etc/profiles/per-user/$(id -un)/bin:$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin&quot; exec devenv --no-tui shell -- npm run dev" />
+    <option name="SCRIPT_WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <option name="EXECUTE_IN_TERMINAL" value="false" />
+    <option name="EXECUTE_SCRIPT_FILE" value="false" />
+    <method v="2" />
+  </configuration>
+</component>

@@ -13,20 +13,22 @@ npm run dev
 
 With a standalone installation of Node.js 22.18+ on the 22.x line, Node.js 24.x, or Node.js 26 and later, run `npm ci` before `npm run dev`.
 
-Open [the Vite development server](http://127.0.0.1:5173/). To test offline access, build and serve the production output.
+In IntelliJ IDEA, run **Dev** to start the same server through devenv. Open [the development server](http://127.0.0.1:5173/) and leave it open to see changes as you save.
+
+To test offline access, build and serve the production output.
 
 ```sh
 npm run build
 npm run preview
 ```
 
-Open [the production preview](http://127.0.0.1:4173/). Browsers allow service workers and geolocation on loopback for development. Use HTTPS when testing on a phone. In IntelliJ IDEA, the **Preview** and **Tests** run configurations use devenv.
+Open [the production preview](http://127.0.0.1:4173/). Browsers allow service workers and geolocation on loopback for development. Use HTTPS when testing on a phone.
 
 ## Check changes
 
 - `npm run check` checks formatting with Oxfmt, runs Oxlint with anti-slop, type-checks the app and worker, and runs Vitest.
 - `npm run format` applies formatting. `npm run lint -- --fix` applies available lint fixes.
-- `npm test` runs the tests once, including a production build in a temporary directory. `npm run test:watch` starts Vitest in watch mode.
+- `npm test` runs the tests once, including a production build in a temporary directory. IntelliJ IDEA’s **Tests** run configuration runs the same command through devenv. `npm run test:watch` starts Vitest in watch mode.
 
 The anti-slop plugin is vendored with its license and upstream revision. [Vendored plugin](tools/oxlint/anti-slop/UPSTREAM.md)
 
