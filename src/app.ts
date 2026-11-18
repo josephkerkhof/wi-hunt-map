@@ -1,8 +1,9 @@
-import type { Point } from './county-data';
+import type { Point } from './area-data';
 import {
   AREAS,
   FIRST_DATE,
   LAST_DATE,
+  OFFSETS,
   clockParts,
   dailyHours,
   isArea,
@@ -94,8 +95,7 @@ function isStoredLocation(value: unknown): value is LocationChoice {
     'area' in value &&
     isArea(value.area) &&
     'zone' in value &&
-    isZone(value.zone) &&
-    (!('county' in value) || typeof value.county === 'string')
+    isZone(value.zone)
   );
 }
 
@@ -107,9 +107,9 @@ function loadLocation(): Selection | null {
     const saved: unknown = JSON.parse(stored);
 
     if (isStoredLocation(saved)) {
-      const { area, zone, county } = saved;
+      const { area, zone } = saved;
 
-      return { area, zone, county };
+      return { area, zone };
     }
   } catch {
     // Storage can be unavailable in private browsing.
@@ -120,10 +120,10 @@ function loadLocation(): Selection | null {
 
 function useLocation(choice: LocationChoice, point?: Point) {
   selection = { ...choice, point };
-  const { area, zone, county } = choice;
+  const { area, zone } = choice;
 
   try {
-    localStorage.setItem(storageKey, JSON.stringify({ area, zone, county }));
+    localStorage.setItem(storageKey, JSON.stringify({ area, zone }));
   } catch {
     // The current choice still works for this session.
   }
@@ -138,7 +138,7 @@ function locationMessage(message: string) {
 }
 
 function reportLocationFailure(message: string) {
-  const previous = selection ? ' Today’s hours still use the selected zone shown above.' : '';
+  const previous = selection ? ' Today’s hours still use the area and zone shown above.' : '';
   locationMessage(message + previous);
 }
 
@@ -226,10 +226,9 @@ function renderMap() {
 
 function renderLocation() {
   if (selection) {
-    const { county, area, zone } = selection;
-    const place = county ? `${county} County · ` : '';
+    const { area, zone } = selection;
     const detail = $('location-detail');
-    const text = `${place}${AREAS[area]} area · Zone ${zone}`;
+    const text = `${AREAS[area]} area · Zone ${zone} (+${OFFSETS[zone]} min)`;
 
     if (detail.textContent !== text) detail.textContent = text;
   }

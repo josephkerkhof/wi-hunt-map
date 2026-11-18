@@ -1,16 +1,14 @@
-import { COUNTIES, type Polygon, type Ring } from './county-data';
+import { AREA_BOUNDARIES, type Area, type Ring } from './area-data';
 import { HOURS } from './hours-data';
 
 export const OFFSETS = { A: 0, B: 4, C: 8, D: 12, E: 16, F: 20 };
 export const MERIDIANS = [-92, -91, -90, -89, -88];
-export const AREAS = { north: 'Northern', south: 'Southern' };
+export const AREAS = { north: 'Northern', south: 'Southern' } satisfies Record<Area, string>;
 export const ZONES_WEST_TO_EAST = ['F', 'E', 'D', 'C', 'B', 'A'] as const satisfies readonly Zone[];
-
-export type Area = keyof typeof AREAS;
 
 export type Zone = keyof typeof OFFSETS;
 
-export type LocationChoice = { area: Area; zone: Zone; county?: string };
+export type LocationChoice = { area: Area; zone: Zone };
 
 export type LocationError = 'accuracy' | 'boundary' | 'outside';
 
@@ -23,56 +21,9 @@ if (!firstDate || !lastDate) throw new Error('The shooting hours table is empty'
 export const FIRST_DATE = firstDate;
 export const LAST_DATE = lastDate;
 
-// Northern counties in Wis. Admin. Code NR 10.06(2)(a), including its southern edge.
-const northern = new Set([
-  'Ashland',
-  'Barron',
-  'Bayfield',
-  'Burnett',
-  'Chippewa',
-  'Clark',
-  'Door',
-  'Douglas',
-  'Dunn',
-  'Eau Claire',
-  'Florence',
-  'Forest',
-  'Iron',
-  'Langlade',
-  'Lincoln',
-  'Marathon',
-  'Marinette',
-  'Menominee',
-  'Oconto',
-  'Oneida',
-  'Pierce',
-  'Polk',
-  'Price',
-  'Rusk',
-  'Sawyer',
-  'Shawano',
-  'St. Croix',
-  'Taylor',
-  'Vilas',
-  'Washburn',
-]);
-
-export const countyGeometry = COUNTIES.map(([name, polygons]) => {
-  const points = polygons.flat(2);
-  const xs = points.map(([x]) => x);
-  const ys = points.map(([, y]) => y);
-  const area: Area = northern.has(name) ? 'north' : 'south';
-
-  return {
-    name,
-    area,
-    polygons,
-    bounds: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as const,
-  };
-});
-
 const timeZone = 'America/Chicago';
 const minuteMs = 60_000;
+const metersPerLatitude = 111_320;
 
 const wisconsinDateFormatter = new Intl.DateTimeFormat('en-US', {
   timeZone,
@@ -179,69 +130,55 @@ function containsPoint(ring: Ring, x: number, y: number) {
   return inside;
 }
 
-function distanceToEdge(polygon: Polygon, x: number, y: number, metersPerLongitude: number) {
-  const metersPerLatitude = 111_320;
+function distanceToEdge(ring: Ring, x: number, y: number, metersPerLongitude: number) {
   let nearest = Infinity;
+  let [x0, y0] = ring[0];
 
-  for (const ring of polygon) {
-    let [x0, y0] = ring[0];
-
-    for (const [x1, y1] of ring.slice(1)) {
-      const dx = (x1 - x0) * metersPerLongitude;
-      const dy = (y1 - y0) * metersPerLatitude;
-      const px = (x - x0) * metersPerLongitude;
-      const py = (y - y0) * metersPerLatitude;
-      const lengthSquared = dx * dx + dy * dy;
-      const t = lengthSquared ? Math.min(1, Math.max(0, (px * dx + py * dy) / lengthSquared)) : 0;
-      nearest = Math.min(nearest, Math.hypot(px - t * dx, py - t * dy));
-      x0 = x1;
-      y0 = y1;
-    }
+  for (const [x1, y1] of ring.slice(1)) {
+    const dx = (x1 - x0) * metersPerLongitude;
+    const dy = (y1 - y0) * metersPerLatitude;
+    const px = (x - x0) * metersPerLongitude;
+    const py = (y - y0) * metersPerLatitude;
+    const lengthSquared = dx * dx + dy * dy;
+    const t = lengthSquared ? Math.min(1, Math.max(0, (px * dx + py * dy) / lengthSquared)) : 0;
+    nearest = Math.min(nearest, Math.hypot(px - t * dx, py - t * dy));
+    x0 = x1;
+    y0 = y1;
   }
 
   return nearest;
 }
 
 export function locate(
-  x: number,
-  y: number,
+  longitude: number,
+  latitude: number,
   accuracy: number,
 ): LocationChoice | { error: LocationError } {
-  if (![x, y, accuracy].every(Number.isFinite) || accuracy < 0 || accuracy > 5000) {
+  if (![longitude, latitude, accuracy].every(Number.isFinite) || accuracy < 0 || accuracy > 5000) {
     return { error: 'accuracy' };
   }
 
-  let match: { county: (typeof countyGeometry)[number]; polygon: Polygon } | undefined;
+  for (const [area, rings] of AREA_BOUNDARIES) {
+    const ring = rings.find(ring => containsPoint(ring, longitude, latitude));
 
-  for (const county of countyGeometry) {
-    const [west, south, east, north] = county.bounds;
+    if (!ring) continue;
 
-    if (x < west || x > east || y < south || y > north) continue;
+    const metersPerLongitude = metersPerLatitude * Math.cos((latitude * Math.PI) / 180);
 
-    const polygon = county.polygons.find(
-      ([outer, ...holes]) =>
-        containsPoint(outer, x, y) && !holes.some(hole => containsPoint(hole, x, y)),
-    );
+    const meridianDistance =
+      Math.min(...MERIDIANS.map(meridian => Math.abs(longitude - meridian))) * metersPerLongitude;
 
-    if (!polygon) continue;
+    // Allow room for generalized area edges as well as reported GPS uncertainty.
+    const nearAreaEdge =
+      distanceToEdge(ring, longitude, latitude, metersPerLongitude) <= accuracy + 2000;
 
-    if (match) return { error: 'boundary' };
-    match = { county, polygon };
+    if (nearAreaEdge || meridianDistance <= Math.max(25, accuracy)) return { error: 'boundary' };
+
+    const nextBoundary = MERIDIANS.findIndex(meridian => longitude < meridian);
+    const zone = ZONES_WEST_TO_EAST[nextBoundary] ?? 'A';
+
+    return { area, zone };
   }
 
-  if (!match) return { error: 'outside' };
-  const { county, polygon } = match;
-  const metersPerLongitude = 111_320 * Math.cos((y * Math.PI) / 180);
-
-  const meridianDistance =
-    Math.min(...MERIDIANS.map(meridian => Math.abs(x - meridian))) * metersPerLongitude;
-
-  // Allow room for generalized county geometry as well as reported GPS uncertainty.
-  const nearCountyEdge = distanceToEdge(polygon, x, y, metersPerLongitude) <= accuracy + 2000;
-
-  if (nearCountyEdge || meridianDistance <= Math.max(25, accuracy)) return { error: 'boundary' };
-  const nextBoundary = MERIDIANS.findIndex(meridian => x <= meridian);
-  const zone = ZONES_WEST_TO_EAST[nextBoundary] ?? 'A';
-
-  return { area: county.area, zone, county: county.name };
+  return { error: 'outside' };
 }

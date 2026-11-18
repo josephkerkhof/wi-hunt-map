@@ -12,6 +12,8 @@ import {
 } from '../src/hours';
 
 test('uses the published open and close times for both areas and all six offsets', () => {
+  assert.deepEqual(OFFSETS, { A: 0, B: 4, C: 8, D: 12, E: 16, F: 20 });
+
   for (const zone of ZONES_WEST_TO_EAST) {
     const offset = OFFSETS[zone];
     assert.deepEqual(dailyHours('2026-11-21', { area: 'north', zone }), {
@@ -103,16 +105,32 @@ test('the table has no gaps and never extrapolates', () => {
   assert.equal(dailyHours('2026-11-21', null), null);
 });
 
-test('uses county boundaries for area and GPS longitude for zone', () => {
-  assert.deepEqual(locate(-89.4012, 43.0731, 30), { area: 'south', zone: 'C', county: 'Dane' });
-  assert.deepEqual(locate(-89.6301, 44.9591, 30), { area: 'north', zone: 'C', county: 'Marathon' });
-  assert.deepEqual(locate(-92.4874, 44.7322, 30), { area: 'north', zone: 'F', county: 'Pierce' });
-  assert.deepEqual(locate(-91.4846, 46.013, 30), { area: 'north', zone: 'E', county: 'Sawyer' });
-  assert.deepEqual(locate(-88.021, 44.5133, 30), { area: 'south', zone: 'B', county: 'Brown' });
+test('selects the DNR area independently of the longitude zone', () => {
+  assert.deepEqual(locate(-89.6301, 44.9591, 30), { area: 'north', zone: 'C' });
+  assert.deepEqual(locate(-89.6301, 44.6322, 30), { area: 'south', zone: 'C' });
+  assert.deepEqual(locate(-92.4874, 44.7322, 30), { area: 'north', zone: 'F' });
+  assert.deepEqual(locate(-91.4846, 46.013, 30), { area: 'north', zone: 'E' });
+  assert.deepEqual(locate(-88.021, 44.5133, 30), { area: 'south', zone: 'B' });
+  assert.deepEqual(locate(-87.65, 44.15, 30), { area: 'south', zone: 'A' });
+});
+
+test('applies different offsets on opposite sides of a meridian within Marathon County', () => {
+  const east = locate(-89.6301, 44.9591, 30);
+  const west = locate(-90.16, 44.9591, 30);
+  assert.ok('zone' in east && 'zone' in west);
+  assert.deepEqual(east, { area: 'north', zone: 'C' });
+  assert.deepEqual(west, { area: 'north', zone: 'D' });
+  assert.deepEqual(dailyHours('2026-11-21', east), { opens: 396, closes: 1002 });
+  assert.deepEqual(dailyHours('2026-11-21', west), { opens: 400, closes: 1006 });
+});
+
+test('accepts a point on the Marathon–Lincoln county line within the Northern area', () => {
+  assert.deepEqual(locate(-89.734828, 45.119656, 30), { area: 'north', zone: 'C' });
 });
 
 test('does not assign uncertain or out-of-state positions', () => {
   assert.deepEqual(locate(-90, 44.02, 30), { error: 'boundary' });
+  assert.deepEqual(locate(-89.534338, 44.687, 30), { error: 'boundary' });
   assert.deepEqual(locate(-89.4012, 43.0731, 10_000), { error: 'accuracy' });
   assert.deepEqual(locate(-89.4, 42.45, 30), { error: 'outside' });
 });

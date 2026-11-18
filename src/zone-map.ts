@@ -1,5 +1,6 @@
-import type { Point } from './county-data';
-import { countyGeometry, MERIDIANS, ZONES_WEST_TO_EAST, type Area, type Zone } from './hours';
+import { AREA_BOUNDARIES, type Area, type Point } from './area-data';
+import { COUNTY_LINES } from './county-lines';
+import { MERIDIANS, ZONES_WEST_TO_EAST, type Zone } from './hours';
 
 type MapSelection = { area: Area; zone: Zone; point?: Point };
 
@@ -101,22 +102,20 @@ export function setupZoneMap(
     const [zoneLeft] = project([MERIDIANS[zoneIndex - 1] ?? west, south]);
     const [zoneRight] = project([MERIDIANS[zoneIndex] ?? east, south]);
 
-    for (const county of countyGeometry) {
+    for (const [area, rings] of AREA_BOUNDARIES) {
       ctx.beginPath();
 
-      for (const polygon of county.polygons) {
-        for (const ring of polygon) {
-          ctx.moveTo(...project(ring[0]));
+      for (const ring of rings) {
+        ctx.moveTo(...project(ring[0]));
 
-          for (const point of ring.slice(1)) ctx.lineTo(...project(point));
-          ctx.closePath();
-        }
+        for (const point of ring.slice(1)) ctx.lineTo(...project(point));
+        ctx.closePath();
       }
 
-      ctx.fillStyle = land[county.area];
+      ctx.fillStyle = land[area];
       ctx.fill('evenodd');
 
-      if (active?.area === county.area) {
+      if (active?.area === area) {
         ctx.save();
         ctx.clip('evenodd');
         ctx.fillStyle = primary;
@@ -126,12 +125,25 @@ export function setupZoneMap(
       }
 
       ctx.strokeStyle = muted;
-      ctx.lineWidth = 0.65;
+      ctx.lineWidth = 1;
       ctx.stroke();
     }
 
-    ctx.setLineDash([3, 4]);
+    ctx.beginPath();
+
+    for (const line of COUNTY_LINES) {
+      ctx.moveTo(...project(line[0]));
+
+      for (const point of line.slice(1)) ctx.lineTo(...project(point));
+    }
+
     ctx.strokeStyle = muted;
+    ctx.lineWidth = 0.75;
+    ctx.globalAlpha = 0.7;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    ctx.setLineDash([3, 4]);
     ctx.lineWidth = 1;
 
     for (const boundary of MERIDIANS) {

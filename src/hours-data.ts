@@ -5,7 +5,7 @@ type HoursRow = readonly [
   southCloses: number,
 ];
 
-// Zone A wall-clock minutes after midnight. Northern opening/closing, then Southern.
+// Zone A wall-clock minutes after midnight from page 31 of the 2026–27 DNR regulations.
 export const HOURS = {
   '2026-09-01': [341, 1188, 345, 1186],
   '2026-09-02': [343, 1186, 346, 1184],
