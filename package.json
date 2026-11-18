@@ -1,0 +1,12 @@
+{
+  "name": "wi-field-hours",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs && python3 -m http.server 4173 --bind 127.0.0.1 --directory dist",
+    "test": "npm run build && node --test"
+  }
+}

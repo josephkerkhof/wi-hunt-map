@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#213b32">
+  <meta name="description" content="Wisconsin deer shooting hours from the DNR tables, available offline.">
+  <title>Field Hours · Wisconsin deer shooting hours</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./assets/icon-192.png">
+  <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="./assets/styles.css">
+  <script type="module" src="./assets/app.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="shell header-inner">
+      <div class="brand">
+        <img src="./assets/mark.png" width="38" height="38" alt="">
+        <span>Field Hours <small>WISCONSIN</small></span>
+      </div>
+      <button class="button button-header" id="install" type="button">
+        <span class="download-icon" aria-hidden="true"></span> Install app
+      </button>
+    </div>
+  </header>
+
+  <main class="shell" id="main">
+    <div class="title-row">
+      <div>
+        <h1>Deer shooting hours</h1>
+        <p>Wisconsin DNR daily opening and closing times</p>
+      </div>
+      <p class="offline-state" id="offline-state" role="status" data-state="pending">Preparing offline access</p>
+    </div>
+
+    <div class="dashboard">
+      <div class="hours-column">
+        <section aria-labelledby="hours-heading" class="hours-card">
+          <div class="date-row">
+            <div>
+              <h2 id="hours-heading">Shooting window</h2>
+              <time id="selected-date" aria-live="polite"></time>
+            </div>
+            <div class="date-controls">
+              <button type="button" id="previous" class="date-button" aria-label="Previous day"><span class="chevron back" aria-hidden="true"></span></button>
+              <button type="button" id="today" class="date-button today-button">Today</button>
+              <button type="button" id="next" class="date-button" aria-label="Next day"><span class="chevron" aria-hidden="true"></span></button>
+            </div>
+          </div>
+
+          <div class="hours-panel" role="group" aria-label="Daily opening and closing times">
+            <div class="reading">
+              <span class="sun-icon" aria-hidden="true"></span>
+              <span class="reading-label">Opens</span>
+              <div class="clock"><span id="opening">—</span> <small id="opening-period"></small></div>
+            </div>
+            <div class="reading">
+              <span class="sun-icon setting" aria-hidden="true"></span>
+              <span class="reading-label">Closes</span>
+              <div class="clock"><span id="closing">—</span> <small id="closing-period"></small></div>
+            </div>
+            <p class="time-context" id="time-context" aria-live="polite">Choose your location to see hours.</p>
+          </div>
+
+          <div class="card-bottom">
+            <label for="date">Jump to a date</label>
+            <input type="date" id="date">
+          </div>
+          <noscript><p class="noscript">Enable JavaScript to look up shooting hours and download the offline app.</p></noscript>
+        </section>
+
+        <section class="location-card" aria-labelledby="location-heading">
+          <div class="location-heading">
+            <span class="location-emblem" aria-hidden="true"><span class="pin-icon"></span></span>
+            <div>
+              <h2 id="location-heading">Hunt location</h2>
+              <p id="location-detail">Use GPS or choose your DNR area and zone.</p>
+            </div>
+          </div>
+          <div class="location-actions">
+            <button type="button" class="button button-primary" id="gps"><span class="gps-icon" aria-hidden="true"></span><span id="gps-label">Use my location</span></button>
+            <button type="button" class="button button-secondary" id="manual">Choose zone</button>
+          </div>
+          <p class="location-message" id="location-message" role="status" hidden></p>
+        </section>
+      </div>
+
+      <aside class="map-card" aria-labelledby="map-heading">
+        <div class="map-heading">
+          <div>
+            <h2 id="map-heading">Shooting hours zones</h2>
+            <p id="map-guide" role="status">Tap the map to select a location.</p>
+          </div>
+          <span class="north-arrow" aria-hidden="true">N</span>
+        </div>
+        <div class="map-frame">
+          <canvas id="zone-map" aria-label="Wisconsin shooting hours map. Use Choose zone to select an area and zone with the keyboard." aria-describedby="map-guide"></canvas>
+        </div>
+        <div class="map-legend">
+          <span><i class="swatch north"></i> Northern</span>
+          <span><i class="swatch south"></i> Southern</span>
+          <span><i class="swatch meridian"></i> Zone boundary</span>
+        </div>
+        <a class="source-link" href="https://widnr.widen.net/s/mvmqkfqdxx/2023-hunting-hours-map" target="_blank" rel="noopener">Official DNR zone map <span aria-hidden="true">↗</span></a>
+      </aside>
+    </div>
+
+    <footer class="site-footer">
+      <p><span id="coverage"></span>Check season dates and local restrictions for your hunt.</p>
+      <div>
+        <a href="https://dnr.wisconsin.gov/topic/hunt/deer" target="_blank" rel="noopener">DNR deer regulations <span aria-hidden="true">↗</span></a>
+        <a href="https://dnr.wisconsin.gov/topic/Hunt/regulations/OnlineHuntingRegulations/ShootingHoursCalculatingShootingHours" target="_blank" rel="noopener">How hours are calculated <span aria-hidden="true">↗</span></a>
+      </div>
+    </footer>
+  </main>
+
+  <dialog id="zone-dialog" aria-labelledby="zone-dialog-title">
+    <form id="zone-form">
+      <div class="dialog-heading">
+        <h2 id="zone-dialog-title">Choose a shooting hours zone</h2>
+        <button type="button" class="close-button" aria-label="Close zone picker" data-close="zone-dialog">×</button>
+      </div>
+      <p>Choose the area and longitude zone for your hunting spot.</p>
+      <label for="area">DNR area</label>
+      <select id="area" required autofocus>
+        <option value="">Select area</option>
+        <option value="north">Northern</option>
+        <option value="south">Southern</option>
+      </select>
+      <label for="zone">Longitude zone</label>
+      <select id="zone" required>
+        <option value="">Select zone</option>
+        <option value="A">A · East of 88° W · +0 min</option>
+        <option value="B">B · 88–89° W · +4 min</option>
+        <option value="C">C · 89–90° W · +8 min</option>
+        <option value="D">D · 90–91° W · +12 min</option>
+        <option value="E">E · 91–92° W · +16 min</option>
+        <option value="F">F · West of 92° W · +20 min</option>
+      </select>
+      <button type="submit" class="button button-primary">Use this zone</button>
+    </form>
+  </dialog>
+
+  <dialog id="install-dialog" aria-labelledby="install-dialog-title">
+    <div class="dialog-heading">
+      <h2 id="install-dialog-title">Install Field Hours</h2>
+      <button type="button" class="close-button" aria-label="Close install instructions" data-close="install-dialog">×</button>
+    </div>
+    <p><strong>iPhone and iPad</strong><br>In Safari, tap Share, then Add to Home Screen. Enable Open as Web App if offered.</p>
+    <p><strong>Android</strong><br>In Chrome, open the menu and choose Install app or Add to Home screen.</p>
+    <p>Open the installed app while online. Wait for <strong>Ready offline</strong> and set your hunt location before heading out.</p>
+  </dialog>
+</body>
+</html>
