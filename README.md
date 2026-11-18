@@ -4,7 +4,7 @@ Field Hours looks up Wisconsin DNR deer shooting hours for a date and shooting h
 
 ## Run locally
 
-The devenv shell provides Node.js 26 and npm. It installs dependencies from `package-lock.json` when you enter the shell.
+The devenv shell provides Node.js 26, npm, and Wrangler. It installs dependencies from `package-lock.json` when you enter the shell.
 
 ```sh
 devenv shell
@@ -34,11 +34,11 @@ The anti-slop plugin is vendored with its license and upstream revision. [Vendor
 
 Run `npm run build`. Vite 8 uses Rolldown to build the site into `dist/`. For a Git-integrated Pages project, use `npm run build` as the build command and `dist` as the build output directory. If the project uses an older version of Node.js, set `NODE_VERSION` to `24`. [Cloudflare Pages static HTML guide](https://developers.cloudflare.com/pages/framework-guides/deploy-anything/), [Cloudflare Pages build image](https://developers.cloudflare.com/pages/configuration/build-image/)
 
-For a Direct Upload project, upload `dist/` from the Cloudflare dashboard or run the following with an authenticated Wrangler session and your Pages project name. [Cloudflare Pages Direct Upload](https://developers.cloudflare.com/pages/get-started/direct-upload/)
+For a Direct Upload project, upload `dist/` from the Cloudflare dashboard or run the following in the devenv shell with an authenticated Wrangler session and your Pages project name. [Cloudflare Pages Direct Upload](https://developers.cloudflare.com/pages/get-started/direct-upload/)
 
 ```sh
 npm run build
-npx wrangler pages deploy dist --project-name=YOUR_PROJECT_NAME
+wrangler pages deploy dist --project-name=YOUR_PROJECT_NAME
 ```
 
 ## Use it in the field

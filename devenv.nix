@@ -1,6 +1,8 @@
 { pkgs, ... }:
 
 {
+  packages = [ pkgs.wrangler ];
+
   languages.javascript = {
     enable = true;
     package = pkgs.nodejs_26;
