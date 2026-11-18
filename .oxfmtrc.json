@@ -1,0 +1,7 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "singleQuote": true,
+  "arrowParens": "avoid",
+  "ignorePatterns": [".agents/**", ".codex/**", "tools/oxlint/anti-slop/**"],
+  "associations": [{ "files": ["public/manifest.webmanifest"], "language": "json" }]
+}
