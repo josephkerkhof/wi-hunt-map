@@ -71,11 +71,19 @@ export const countyGeometry = COUNTIES.map(([name, polygons]) => {
   };
 });
 
+const timeZone = 'America/Chicago';
+const minuteMs = 60_000;
+
 const wisconsinDateFormatter = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'America/Chicago',
+  timeZone,
   year: 'numeric',
   month: '2-digit',
   day: '2-digit',
+});
+
+const wisconsinOffsetFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone,
+  timeZoneName: 'longOffset',
 });
 
 export function wisconsinDate(now = new Date()) {
@@ -84,6 +92,13 @@ export function wisconsinDate(now = new Date()) {
   );
 
   return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+export function offsetDate(date: string, days: number) {
+  const day = new Date(`${date}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() + days);
+
+  return day.toISOString().slice(0, 10);
 }
 
 export function isArea(value: unknown): value is Area {
@@ -109,6 +124,50 @@ export function dailyHours(date: string, selection: LocationChoice | null) {
   const offset = OFFSETS[zone];
 
   return { opens: opens + offset, closes: closes + offset };
+}
+
+function scheduledTime(date: string, minutes: number) {
+  // Published hours are after the early-morning clock change on daylight saving days.
+  const midday = new Date(`${date}T18:00:00Z`);
+
+  const offset = wisconsinOffsetFormatter
+    .formatToParts(midday)
+    .find(part => part.type === 'timeZoneName');
+
+  if (!offset) throw new Error('Wisconsin time zone offset unavailable');
+
+  return Date.parse(`${date}T00:00:00${offset.value.slice(3)}`) + minutes * minuteMs;
+}
+
+type LiveHours =
+  | { state: 'waiting' | 'within'; minutes: number }
+  | { state: 'closed'; minutes: number | null };
+
+export function liveHours(selection: LocationChoice, now = new Date()): LiveHours | null {
+  const date = wisconsinDate(now);
+  const hours = dailyHours(date, selection);
+
+  if (!hours) return null;
+  const opens = scheduledTime(date, hours.opens);
+  const closes = scheduledTime(date, hours.closes);
+  const current = now.getTime();
+
+  if (current < opens) {
+    return { state: 'waiting', minutes: Math.ceil((opens - current) / minuteMs) };
+  }
+
+  if (current < closes) {
+    return { state: 'within', minutes: Math.floor((closes - current) / minuteMs) };
+  }
+
+  const tomorrow = offsetDate(date, 1);
+  const nextHours = dailyHours(tomorrow, selection);
+
+  const minutes = nextHours
+    ? Math.ceil((scheduledTime(tomorrow, nextHours.opens) - current) / minuteMs)
+    : null;
+
+  return { state: 'closed', minutes };
 }
 
 export function clockParts(minutes: number) {

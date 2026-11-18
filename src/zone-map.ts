@@ -7,7 +7,11 @@ type Projection = { left: number; top: number; scaleX: number; scale: number };
 
 const mapBounds = { west: -93, east: -86.65, south: 42.35, north: 47.13 };
 const longitudeScale = Math.cos((44.8 * Math.PI) / 180);
-const land = { north: '#a4ba96', south: '#e4cda2' };
+
+const areaLabels = [
+  ['Northern', [-90.7, 45.6]],
+  ['Southern', [-89.9, 43.16]],
+] as const;
 
 export function setupZoneMap(
   canvas: HTMLCanvasElement,
@@ -17,6 +21,19 @@ export function setupZoneMap(
 
   if (!ctx) return () => {};
 
+  const styles = getComputedStyle(canvas);
+
+  const land = {
+    north: styles.getPropertyValue('--map-north').trim(),
+    south: styles.getPropertyValue('--map-south').trim(),
+  };
+
+  const water = styles.getPropertyValue('--intro').trim();
+  const grid = styles.getPropertyValue('--line').trim();
+  const navy = styles.getPropertyValue('--navy').trim();
+  const muted = styles.getPropertyValue('--muted').trim();
+  const primary = styles.getPropertyValue('--primary').trim();
+  const surface = styles.getPropertyValue('--surface').trim();
   let projection: Projection | undefined;
   let active: MapSelection | null = null;
 
@@ -47,9 +64,9 @@ export function setupZoneMap(
 
     projection = { left, top, scaleX, scale };
 
-    ctx.fillStyle = '#e8efed';
+    ctx.fillStyle = water;
     ctx.fillRect(0, 0, width, height);
-    ctx.strokeStyle = '#d9e2df';
+    ctx.strokeStyle = grid;
     ctx.lineWidth = 1;
 
     for (let i = 1; i < 5; i += 1) {
@@ -74,13 +91,13 @@ export function setupZoneMap(
 
       ctx.fillStyle = land[county.area];
       ctx.fill('evenodd');
-      ctx.strokeStyle = '#50674c85';
+      ctx.strokeStyle = muted;
       ctx.lineWidth = 0.65;
       ctx.stroke();
     }
 
     ctx.setLineDash([3, 4]);
-    ctx.strokeStyle = '#344b3e9c';
+    ctx.strokeStyle = muted;
     ctx.lineWidth = 1;
 
     for (const boundary of MERIDIANS) {
@@ -95,24 +112,39 @@ export function setupZoneMap(
     ctx.font = 'bold 12px system-ui';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    const marker = active?.point ? project(active.point) : null;
+
+    for (const [label, point] of areaLabels) {
+      const [x, y] = project(point);
+      const labelWidth = ctx.measureText(label).width + 12;
+
+      const overlapsMarker =
+        marker && Math.abs(marker[0] - x) < labelWidth / 2 + 8 && Math.abs(marker[1] - y) < 18;
+
+      const labelY = overlapsMarker ? y - 26 : y;
+      ctx.fillStyle = surface;
+      ctx.fillRect(x - labelWidth / 2, labelY - 10, labelWidth, 20);
+      ctx.fillStyle = navy;
+      ctx.fillText(label, x, labelY);
+    }
 
     for (const [i, letter] of ZONES_WEST_TO_EAST.entries()) {
       const [x] = project([-92.5 + i, 0]);
       const selected = active?.zone === letter;
-      ctx.fillStyle = selected ? '#294b3b' : '#f7faf6';
+      ctx.fillStyle = selected ? primary : surface;
       ctx.beginPath();
-      ctx.arc(x, height - 14, 9, 0, 2 * Math.PI);
+      ctx.arc(x, height - 14, 10, 0, 2 * Math.PI);
       ctx.fill();
-      ctx.fillStyle = selected ? '#fff' : '#3f5f4f';
+      ctx.fillStyle = selected ? surface : navy;
       ctx.fillText(letter, x, height - 14);
     }
 
-    if (active?.point) {
-      const [x, y] = project(active.point);
+    if (marker) {
+      const [x, y] = marker;
       ctx.beginPath();
       ctx.arc(x, y, 5.5, 0, 2 * Math.PI);
-      ctx.fillStyle = '#a74d24';
-      ctx.strokeStyle = '#fffef9';
+      ctx.fillStyle = primary;
+      ctx.strokeStyle = surface;
       ctx.lineWidth = 2;
       ctx.fill();
       ctx.stroke();

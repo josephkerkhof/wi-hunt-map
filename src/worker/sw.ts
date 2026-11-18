@@ -40,6 +40,7 @@ self.addEventListener('fetch', event => {
 
   if (url.origin !== scope.origin) return;
   url.search = '';
+  url.hash = '';
 
   if (request.mode === 'navigate' && url.href === index) url.href = scope.href;
 
@@ -49,19 +50,6 @@ self.addEventListener('fetch', event => {
       const cache = await caches.open(CACHE_NAME);
 
       return (await cache.match(url.href)) || fetch(request);
-    })(),
-  );
-});
-
-self.addEventListener('message', event => {
-  const port = event.ports[0];
-
-  if (event.data !== 'offline-status' || !port) return;
-  event.waitUntil(
-    (async () => {
-      const cache = await caches.open(CACHE_NAME);
-      const results = await Promise.all(urls.map(url => cache.match(url)));
-      port.postMessage({ ready: results.every(Boolean) });
     })(),
   );
 });

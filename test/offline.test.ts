@@ -9,17 +9,13 @@ import { runInNewContext } from 'node:vm';
 import { normalizePath } from 'vite';
 import { test } from 'vitest';
 
-type WorkerMessage = { ready: boolean };
-
 type WorkerEvent = {
   request?: Pick<Request, 'method' | 'mode' | 'url'>;
-  data?: 'offline-status';
-  ports?: readonly { postMessage(message: WorkerMessage): void }[];
   waitUntil(work: Promise<void>): void;
   respondWith(work: Promise<Buffer | undefined>): void;
 };
 
-type EventName = 'install' | 'activate' | 'fetch' | 'message';
+type EventName = 'install' | 'activate' | 'fetch';
 
 const run = promisify(execFile);
 const vite = fileURLToPath(new URL('./bin/vite.js', import.meta.resolve('vite/package.json')));
@@ -127,11 +123,13 @@ test('the production worker serves the complete install from cache with the netw
   const index = cache.get(scope);
   assert.ok(index);
   assert.equal(await request(scope + '?opened=offline', 'navigate'), index);
+  assert.equal(await request(scope + '#location-heading', 'navigate'), index);
   assert.equal(await request(scope + 'index.html', 'navigate'), index);
 
   for (const [, path] of index.toString('utf8').matchAll(/\b(?:src|href)="([^"]+)"/g)) {
     assert.ok(path);
     const url = new URL(path, scope);
+    url.hash = '';
 
     if (url.origin === new URL(scope).origin)
       assert.ok(cache.has(url.href), `Expected ${path} in the offline cache`);
@@ -142,26 +140,4 @@ test('the production worker serves the complete install from cache with the netw
   }
 
   assert.equal(await request('https://dnr.wisconsin.gov/'), undefined);
-
-  let ready: boolean | undefined;
-
-  const status = {
-    data: 'offline-status',
-    ports: [
-      {
-        postMessage: (message: WorkerMessage) => {
-          ready = message.ready;
-        },
-      },
-    ],
-  } as const;
-
-  await dispatch('message', status);
-  assert.equal(ready, true);
-
-  const script = urls.find(url => url.endsWith('.js'));
-  assert.ok(script);
-  cache.delete(script);
-  await dispatch('message', status);
-  assert.equal(ready, false);
 });

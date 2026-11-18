@@ -6,6 +6,7 @@ import {
   ZONES_WEST_TO_EAST,
   clockParts,
   dailyHours,
+  liveHours,
   locate,
   wisconsinDate,
 } from '../src/hours';
@@ -34,6 +35,47 @@ test('preserves the table’s daylight saving switch and January 2027 rows', () 
   assert.equal(wisconsinDate(new Date('2026-11-21T05:59:59Z')), '2026-11-20');
   assert.equal(wisconsinDate(new Date('2026-11-21T06:00:00Z')), '2026-11-21');
   assert.equal(wisconsinDate(new Date('2026-09-12T05:00:00Z')), '2026-09-12');
+});
+
+test('updates live status at the published opening and closing times', () => {
+  const choice = { area: 'north', zone: 'A' } as const;
+
+  assert.deepEqual(liveHours(choice, new Date('2026-11-21T12:27:59Z')), {
+    state: 'waiting',
+    minutes: 1,
+  });
+  assert.deepEqual(liveHours(choice, new Date('2026-11-21T12:28:00Z')), {
+    state: 'within',
+    minutes: 606,
+  });
+  assert.deepEqual(liveHours(choice, new Date('2026-11-21T22:33:59Z')), {
+    state: 'within',
+    minutes: 0,
+  });
+  assert.equal(liveHours(choice, new Date('2026-11-21T22:34:00Z'))?.state, 'closed');
+});
+
+test('counts elapsed minutes overnight across the fall clock change', () => {
+  const choice = { area: 'north', zone: 'A' } as const;
+
+  assert.deepEqual(liveHours(choice, new Date('2026-10-31T22:58:00Z')), {
+    state: 'closed',
+    minutes: 782,
+  });
+  assert.deepEqual(liveHours(choice, new Date('2026-11-01T11:59:30Z')), {
+    state: 'waiting',
+    minutes: 1,
+  });
+});
+
+test('does not project a countdown beyond the bundled tables', () => {
+  const choice = { area: 'north', zone: 'A' } as const;
+
+  assert.deepEqual(liveHours(choice, new Date('2027-01-31T23:15:00Z')), {
+    state: 'closed',
+    minutes: null,
+  });
+  assert.equal(liveHours(choice, new Date('2027-02-01T06:00:00Z')), null);
 });
 
 test('the table has no gaps and never extrapolates', () => {

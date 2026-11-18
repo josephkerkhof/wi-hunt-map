@@ -3,12 +3,13 @@ import {
   AREAS,
   FIRST_DATE,
   LAST_DATE,
-  OFFSETS,
   clockParts,
   dailyHours,
   isArea,
   isZone,
+  liveHours,
   locate,
+  offsetDate,
   wisconsinDate,
   type LocationChoice,
   type LocationError,
@@ -41,16 +42,22 @@ function $(id: string, type: new () => HTMLElement = HTMLElement): HTMLElement {
 }
 
 const dateInput = $('date', HTMLInputElement);
+const gpsButton = $('gps', HTMLButtonElement);
 const zoneDialog = $('zone-dialog', HTMLDialogElement);
 const areaInput = $('area', HTMLSelectElement);
 const zoneInput = $('zone', HTMLSelectElement);
 const installDialog = $('install-dialog', HTMLDialogElement);
+const scheduleStatus = $('schedule-status');
+const scheduleAnnouncement = $('schedule-announcement');
+const statusHeading = $('status-heading');
+const statusMessage = $('status-message');
+const liveToggle = $('toggle-live', HTMLButtonElement);
 const storageKey = 'field-hours.location';
 
 const dateFormat = new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
   weekday: 'long',
-  month: 'short',
+  month: 'long',
   day: 'numeric',
   year: 'numeric',
 });
@@ -62,7 +69,7 @@ const coverageFormat = new Intl.DateTimeFormat('en-US', {
   year: 'numeric',
 });
 
-const mapHint = 'Tap the map to select a location.';
+const mapHint = 'Select a spot on the map or choose a zone manually.';
 
 const boundaryMessages = {
   accuracy: 'Location accuracy is too low. Try GPS again or choose your zone.',
@@ -74,10 +81,10 @@ const boundaryMessages = {
 let selection = loadLocation();
 let today = wisconsinDate();
 let date = today;
+let showLive = true;
 let locating = false;
 let locationRequest = 0;
 let installPrompt: BeforeInstallPromptEvent | null = null;
-let offlineRequest = 0;
 
 function isStoredLocation(value: unknown): value is LocationChoice {
   return (
@@ -127,7 +134,6 @@ function useLocation(choice: LocationChoice, source: Selection['source'], point?
 }
 
 function locationMessage(message: string) {
-  $('location-message').hidden = !message;
   $('location-message').textContent = message;
 }
 
@@ -136,13 +142,15 @@ function reportLocationFailure(message: string) {
   locationMessage(message + previous);
 }
 
-function shiftDate(days: number) {
+function shiftDate(days: -1 | 1) {
+  if (days < 0 && date <= FIRST_DATE) return;
+
+  if (days > 0 && date >= LAST_DATE) return;
+
   if (date > LAST_DATE && days < 0) return setDate(LAST_DATE);
 
   if (date < FIRST_DATE && days > 0) return setDate(FIRST_DATE);
-  const day = new Date(`${date}T00:00:00Z`);
-  day.setUTCDate(day.getUTCDate() + days);
-  setDate(day.toISOString().slice(0, 10));
+  setDate(offsetDate(date, days));
 }
 
 function setDate(value: string) {
@@ -156,38 +164,97 @@ function writeTime(id: 'opening' | 'closing', value: number | undefined) {
   $(`${id}-period`).textContent = parts.period;
 }
 
-function renderHours() {
+function setScheduleStatus(
+  state: 'location' | 'unavailable' | 'waiting' | 'within' | 'closed',
+  heading: string,
+  message: string,
+) {
+  if (statusMessage.textContent !== message) statusMessage.textContent = message;
+
+  if (scheduleStatus.dataset.state === state) return;
+  $('status-location').hidden = state !== 'location';
+  statusMessage.hidden = !message;
+  scheduleStatus.dataset.state = state;
+  statusHeading.textContent = heading;
+  scheduleAnnouncement.textContent = message ? `${heading}. ${message}` : heading;
+}
+
+function minuteLabel(minutes: number) {
+  return minutes === 1 ? '1 minute' : `${minutes} minutes`;
+}
+
+function renderLiveHours(now: Date) {
+  if (!selection) return;
+  const status = liveHours(selection, now);
+
+  if (!status) return;
+  const { state, minutes } = status;
+
+  if (state === 'waiting') {
+    setScheduleStatus(state, 'Before scheduled hours', `Opens in ${minuteLabel(minutes)}.`);
+  } else if (state === 'within') {
+    const remaining = minutes === 0 ? 'Less than 1 minute' : minuteLabel(minutes);
+    setScheduleStatus(state, 'Within scheduled hours', `${remaining} remaining.`);
+  } else {
+    const next =
+      minutes === null
+        ? 'The bundled schedule ends today.'
+        : `Tomorrow’s scheduled hours open in ${minuteLabel(minutes)}.`;
+
+    setScheduleStatus('closed', 'Closed for today', next);
+  }
+}
+
+function renderHours(now = new Date()) {
   const selected = $('selected-date', HTMLTimeElement);
   selected.dateTime = date;
-  selected.textContent = dateFormat.format(new Date(`${date}T00:00:00Z`));
-  dateInput.value = date;
-  $('previous', HTMLButtonElement).disabled = date <= FIRST_DATE;
-  $('next', HTMLButtonElement).disabled = date >= LAST_DATE;
-  $('today', HTMLButtonElement).disabled = date === today;
+  const dateLabel = dateFormat.format(new Date(`${date}T00:00:00Z`));
+
+  if (selected.textContent !== dateLabel) selected.textContent = dateLabel;
+  const covered = date >= FIRST_DATE && date <= LAST_DATE;
+  dateInput.value = covered ? date : '';
+  $('previous').setAttribute('aria-disabled', String(date <= FIRST_DATE));
+  $('next').setAttribute('aria-disabled', String(date >= LAST_DATE));
+  $('today').setAttribute('aria-current', date === today ? 'date' : 'false');
 
   const hours = dailyHours(date, selection);
   writeTime('opening', hours?.opens);
   writeTime('closing', hours?.closes);
-  let context = 'Choose your location to see hours.';
+  $('hours-panel').setAttribute('aria-hidden', String(!hours));
+  $('time-context').textContent = selection
+    ? `${AREAS[selection.area]} area · Zone ${selection.zone} · Central time`
+    : 'Wisconsin Central time';
 
-  if (date < FIRST_DATE || date > LAST_DATE) {
-    context = 'No DNR table is bundled for this date.';
-  } else if (hours && selection) {
-    const { area, zone } = selection;
-    context = `${AREAS[area]} area · Zone ${zone} (+${OFFSETS[zone]} min) · Central time`;
+  const live = date === today && hours !== null;
+  liveToggle.hidden = !live;
+  scheduleStatus.hidden = hours !== null && (!live || !showLive);
+
+  if (scheduleStatus.hidden) {
+    scheduleAnnouncement.textContent = '';
+  } else if (!covered || (selection && !hours)) {
+    setScheduleStatus(
+      'unavailable',
+      'Hours unavailable',
+      'The bundled DNR tables do not cover this date.',
+    );
+  } else if (!selection) {
+    setScheduleStatus('location', 'Location needed', '');
+  } else if (live) {
+    renderLiveHours(now);
   }
-
-  $('time-context').textContent = context;
 }
 
 function renderLocation() {
   if (selection) {
     const { county, area, zone, source } = selection;
-    const place = county ? `${county} County` : `${AREAS[area]} area`;
-    $('location-detail').textContent = `${place} · Zone ${zone} · ${source}`;
+    const place = county ? `${county} County · ` : '';
+    const detail = $('location-detail');
+    const text = `${place}${AREAS[area]} area · Zone ${zone} · ${source}`;
+
+    if (detail.textContent !== text) detail.textContent = text;
   }
 
-  $('gps', HTMLButtonElement).disabled = locating;
+  gpsButton.setAttribute('aria-disabled', String(locating));
   $('gps-label').textContent = locating ? 'Finding location…' : 'Use my location';
   updateMap(selection);
 }
@@ -200,9 +267,11 @@ function finishGps(request: number) {
   return true;
 }
 
-$('gps').addEventListener('click', () => {
+gpsButton.addEventListener('click', () => {
+  if (locating) return;
+
   if (!navigator.geolocation) {
-    reportLocationFailure('GPS needs a secure browser connection. Choose your zone manually.');
+    reportLocationFailure('Device location is unavailable. Choose your zone manually.');
 
     return;
   }
@@ -262,8 +331,8 @@ $('zone-form').addEventListener('submit', event => {
   if (!isArea(area) || !isZone(zone)) return;
   locationRequest += 1;
   locating = false;
-  useLocation({ area, zone }, 'Manual selection');
   zoneDialog.close();
+  useLocation({ area, zone }, 'Manual selection');
 });
 
 document.querySelectorAll<HTMLButtonElement>('button[data-close]').forEach(button => {
@@ -289,82 +358,40 @@ dateInput.addEventListener('change', () => {
 });
 
 function updateToday() {
-  const current = wisconsinDate();
+  const now = new Date();
+  const current = wisconsinDate(now);
 
-  if (current === today) return;
+  if (current === today) {
+    if (!liveToggle.hidden && showLive) renderLiveHours(now);
+
+    return;
+  }
 
   if (date === today) date = current;
   today = current;
+  renderHours(now);
+}
+
+liveToggle.addEventListener('click', () => {
+  showLive = !showLive;
+  liveToggle.setAttribute('aria-expanded', String(showLive));
+  liveToggle.textContent = showLive ? 'Hide live status' : 'Show live status';
   renderHours();
-}
+});
 
-function offlineStatus(state: 'ready' | 'unavailable', message: string) {
-  $('offline-state').dataset.state = state;
-  $('offline-state').textContent = message;
-}
-
-function isOfflineReady(value: unknown): value is { ready: true } {
-  return typeof value === 'object' && value !== null && 'ready' in value && value.ready === true;
-}
-
-function checkOffline() {
-  if (!import.meta.env.PROD) return;
-  const controller = navigator.serviceWorker?.controller;
-
-  if (!controller) return;
-  const request = ++offlineRequest;
-  const channel = new MessageChannel();
-
-  const timer = setTimeout(() => {
-    channel.port1.close();
-
-    if (request === offlineRequest) offlineStatus('unavailable', 'Offline status unavailable');
-  }, 4000);
-
-  channel.port1.onmessage = ({ data }: MessageEvent<unknown>) => {
-    clearTimeout(timer);
-    channel.port1.close();
-
-    if (request !== offlineRequest) return;
-
-    if (isOfflineReady(data)) offlineStatus('ready', 'Ready offline');
-    else offlineStatus('unavailable', 'Offline download incomplete');
-  };
-
-  controller.postMessage('offline-status', [channel.port2]);
-}
-
-if (!import.meta.env.PROD) {
-  offlineStatus('unavailable', 'Offline access requires a production build');
-} else if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.addEventListener('controllerchange', checkOffline);
-  checkOffline();
-  navigator.serviceWorker
-    .register('./sw.js', { updateViaCache: 'none' })
-    .then(registration => {
-      const installing = registration.installing;
-      installing?.addEventListener('statechange', () => {
-        if (!navigator.serviceWorker.controller && installing.state === 'redundant') {
-          offlineStatus('unavailable', 'Offline download failed · Reload online');
-        }
-      });
-    })
-    .catch(() => {
-      if (!navigator.serviceWorker.controller)
-        offlineStatus('unavailable', 'Offline download unavailable');
-    });
-} else {
-  offlineStatus('unavailable', 'Offline access unavailable');
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(error => {
+    console.warn('Offline download unavailable.', error);
+  });
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) {
-    updateToday();
-    checkOffline();
-  }
+  if (!document.hidden) updateToday();
 });
 
-setInterval(updateToday, 30_000);
+setInterval(() => {
+  if (!document.hidden) updateToday();
+}, 1000);
 
 window.addEventListener('beforeinstallprompt', event => {
   event.preventDefault();
@@ -403,7 +430,7 @@ dateInput.max = LAST_DATE;
 const firstDay = coverageFormat.format(new Date(`${FIRST_DATE}T00:00:00Z`));
 const lastDay = coverageFormat.format(new Date(`${LAST_DATE}T00:00:00Z`));
 
-$('coverage').textContent = `Table coverage runs from ${firstDay} through ${lastDay}. `;
+$('coverage').textContent = `Bundled hours cover ${firstDay} through ${lastDay}.`;
 
 renderLocation();
 

@@ -43,7 +43,7 @@ npx wrangler pages deploy dist --project-name=YOUR_PROJECT_NAME
 
 ## Use it in the field
 
-Open the HTTPS site while connected. On iPhone, use Safari’s Share menu and tap **Add to Home Screen**. On Android, use Chrome’s **Install app** or **Add to Home screen**. Open the installed app, wait for **Ready offline**, and set your hunt location. Try reopening it in airplane mode before leaving. If the phone can’t get a GPS fix, the saved zone and the manual picker work offline. The browser can remove downloaded data when site storage is cleared.
+Open the HTTPS site while connected. On iPhone, use Safari’s Share menu and tap **Add to Home Screen**. On Android, use Chrome’s **Install app** or **Add to Home screen**. Open the installed app while online and set your hunt location. Try reopening it in airplane mode before leaving. If the phone can’t get a GPS fix, the saved zone and the manual picker work offline. The browser can remove downloaded data when site storage is cleared.
 
 If GPS is near a boundary, confirm the zone using the DNR map and choose the area and zone manually. Times are shown in Wisconsin Central time as published in the tables. Check the applicable season dates, equipment rules, and local restrictions for the hunt. [DNR deer regulations](https://dnr.wisconsin.gov/topic/hunt/deer)
 
