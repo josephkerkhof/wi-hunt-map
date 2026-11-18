@@ -22,6 +22,10 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 declare global {
+  interface Navigator {
+    getInstalledRelatedApps?(): Promise<{ platform: string }[]>;
+  }
+
   interface WindowEventMap {
     beforeinstallprompt: BeforeInstallPromptEvent;
   }
@@ -47,7 +51,6 @@ const mapView = $('map-view', HTMLButtonElement);
 const zoneDialog = $('zone-dialog', HTMLDialogElement);
 const areaInput = $('area', HTMLSelectElement);
 const zoneInput = $('zone', HTMLSelectElement);
-const installDialog = $('install-dialog', HTMLDialogElement);
 const scheduleStatus = $('schedule-status');
 const scheduleAnnouncement = $('schedule-announcement');
 const statusHeading = $('status-heading');
@@ -83,7 +86,6 @@ let showLive = true;
 let locating = false;
 let deviceLocation: DeviceLocation | null = null;
 let centeredOnDevice = false;
-let installPrompt: BeforeInstallPromptEvent | null = null;
 
 function isStoredLocation(value: unknown): value is LocationChoice {
   return (
@@ -379,35 +381,86 @@ setInterval(() => {
   if (!document.hidden) updateToday();
 }, 1000);
 
-window.addEventListener('beforeinstallprompt', event => {
-  event.preventDefault();
-  installPrompt = event;
-});
+async function setupInstallBanner() {
+  const isPhone = /\biPhone\b|\bAndroid\b.*\bMobile\b/.test(navigator.userAgent);
 
-window.addEventListener('appinstalled', () => {
-  $('install').hidden = true;
-});
+  const isStandalone =
+    window.matchMedia('(display-mode: standalone)').matches ||
+    ('standalone' in navigator && navigator.standalone === true);
 
-$('install').hidden =
-  window.matchMedia('(display-mode: standalone)').matches ||
-  ('standalone' in navigator && navigator.standalone === true);
+  if (!isPhone || isStandalone) return;
 
-$('install').addEventListener('click', async () => {
-  if (!installPrompt) {
-    installDialog.showModal();
+  let installPrompt: BeforeInstallPromptEvent | null = null;
 
-    return;
-  }
+  window.addEventListener('beforeinstallprompt', event => {
+    event.preventDefault();
+    installPrompt = event;
+  });
 
-  const prompt = installPrompt;
-  installPrompt = null;
+  const dismissalKey = 'field-hours.install-dismissed';
 
   try {
-    await prompt.prompt();
+    if (localStorage.getItem(dismissalKey) === 'true') return;
   } catch {
-    installDialog.showModal();
+    // The banner still works when storage is unavailable.
   }
-});
+
+  const banner = $('install-banner');
+  const installDialog = $('install-dialog', HTMLDialogElement);
+  let closed = false;
+
+  function hideBanner() {
+    closed = true;
+    installPrompt = null;
+    const hadFocus = banner.contains(document.activeElement);
+    banner.hidden = true;
+
+    if (hadFocus) $('main').focus({ preventScroll: true });
+  }
+
+  window.addEventListener('appinstalled', hideBanner);
+
+  $('dismiss-install').addEventListener('click', () => {
+    hideBanner();
+
+    try {
+      localStorage.setItem(dismissalKey, 'true');
+    } catch {
+      // The banner stays dismissed on this page.
+    }
+  });
+
+  $('install').addEventListener('click', async () => {
+    if (!installPrompt) {
+      installDialog.showModal();
+
+      return;
+    }
+
+    const prompt = installPrompt;
+    installPrompt = null;
+
+    try {
+      const { outcome } = await prompt.prompt();
+
+      if (outcome === 'accepted') hideBanner();
+    } catch {
+      if (!closed) installDialog.showModal();
+    }
+  });
+
+  try {
+    const apps = await navigator.getInstalledRelatedApps?.();
+
+    if (apps?.some(app => app.platform === 'webapp')) return;
+  } catch {
+    // Installation instructions are still available when the browser cannot check.
+  }
+
+  if (!closed) banner.hidden = false;
+}
+
+void setupInstallBanner();
 
 const firstDay = coverageFormat.format(new Date(`${FIRST_DATE}T00:00:00Z`));
 const lastDay = coverageFormat.format(new Date(`${LAST_DATE}T00:00:00Z`));

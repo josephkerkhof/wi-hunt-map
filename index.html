@@ -18,15 +18,28 @@
   <body>
     <a class="skip-link" href="#main">Skip to main content</a>
     <header class="site-header">
+      <div class="install-banner" id="install-banner" hidden>
+        <div class="shell install-banner-inner">
+          <p>Use Field Hours offline.</p>
+          <button class="button button-primary" id="install" type="button">
+            <span class="download-icon" aria-hidden="true"></span>
+            Install app
+          </button>
+          <button
+            class="close-button"
+            id="dismiss-install"
+            type="button"
+            aria-label="Dismiss install banner"
+          >
+            ×
+          </button>
+        </div>
+      </div>
       <div class="shell header-inner">
         <a class="brand" href="./">
           <img src="./assets/mark.png" width="36" height="36" alt="" />
           <span>Field Hours</span>
         </a>
-        <button class="button button-outline" id="install" type="button">
-          <span class="download-icon" aria-hidden="true"></span>
-          Install app
-        </button>
       </div>
     </header>
 
