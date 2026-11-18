@@ -3,3 +3,8 @@ node_modules/
 .wrangler/
 .idea/
 .DS_Store
+
+# Devenv
+.devenv*
+devenv.local.nix
+devenv.local.yaml

@@ -4,12 +4,14 @@ Field Hours looks up Wisconsin DNR deer shooting hours for a date and shooting h
 
 ## Run locally
 
-Use Node.js 22 or later. The preview command uses Python 3.
+Run `devenv shell` to get Node.js 26 (with npm) and Python 3. You can also run the commands directly with Node.js 22 or later and Python 3 installed.
 
 ```sh
 npm run dev
 npm test
 ```
+
+In IntelliJ IDEA, select **Preview (devenv)** or **Tests (devenv)** in the run configuration dropdown.
 
 Open [the local preview](http://127.0.0.1:4173/). Browsers allow service workers and geolocation on loopback for development. Use HTTPS when testing on a phone.
 
