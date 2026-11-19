@@ -134,6 +134,28 @@ h3 {
   background: var(--surface);
 }
 
+.ios-status-bar-background {
+  display: none;
+}
+
+@media (display-mode: standalone) {
+  @supports (-webkit-touch-callout: none) and (background-clip: text) {
+    .ios-status-bar-background {
+      /* WebKit uses fixed backgrounds taller than 10px in place of the scroll-edge blur. */
+      position: fixed;
+      z-index: 2;
+      inset-block-start: 0;
+      inset-inline: 0;
+      display: block;
+      block-size: 11px;
+      pointer-events: none;
+      background-color: var(--surface);
+      /* Clipping to empty text keeps the sampled background invisible in the page. */
+      background-clip: text;
+    }
+  }
+}
+
 .install-banner {
   border-block-end: 1px solid var(--line);
   background: var(--primary-light);
