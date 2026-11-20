@@ -23,6 +23,31 @@ export function isOnMap([x, y]: Point) {
   return x >= west && x <= east && y >= south && y <= north;
 }
 
+function zoneCenter({ area, zone }: MapSelection): Point {
+  const index = ZONES_WEST_TO_EAST.indexOf(zone);
+  const west = MERIDIANS[index - 1] ?? mapBounds.west;
+  const east = MERIDIANS[index] ?? mapBounds.east;
+  const rings = AREA_BOUNDARIES.find(([name]) => name === area)?.[1] ?? [];
+  let westLand = Infinity;
+  let eastLand = -Infinity;
+  let south = Infinity;
+  let north = -Infinity;
+
+  for (const ring of rings) {
+    for (const [x, y] of ring) {
+      if (x < west || x > east) continue;
+      westLand = Math.min(westLand, x);
+      eastLand = Math.max(eastLand, x);
+      south = Math.min(south, y);
+      north = Math.max(north, y);
+    }
+  }
+
+  if (Number.isFinite(south)) return [(westLand + eastLand) / 2, (north + south) / 2];
+
+  return [(west + east) / 2, area === 'north' ? 45.6 : 43.16];
+}
+
 export function setupZoneMap(
   canvas: HTMLCanvasElement,
   onPick: (point: Point, accuracy: number) => void,
@@ -31,30 +56,33 @@ export function setupZoneMap(
 
   if (!ctx) return () => {};
 
-  const styles = getComputedStyle(canvas);
-
-  const land = {
-    north: styles.getPropertyValue('--map-north').trim(),
-    south: styles.getPropertyValue('--map-south').trim(),
-  };
-
-  const water = styles.getPropertyValue('--map-water').trim();
-  const grid = styles.getPropertyValue('--map-grid').trim();
-  const deviceColor = styles.getPropertyValue('--map-device').trim();
-  const selectedColor = styles.getPropertyValue('--map-selected').trim();
-  const navy = styles.getPropertyValue('--navy').trim();
-  const muted = styles.getPropertyValue('--muted').trim();
-  const primary = styles.getPropertyValue('--primary').trim();
-  const surface = styles.getPropertyValue('--surface').trim();
   let projection: Projection | undefined;
   let active: MapSelection | null = null;
   let device: DeviceLocation | null = null;
-  let centerOnDevice = false;
+  let zoomToSelection = false;
 
   const draw = () => {
     const { width, height } = canvas.getBoundingClientRect();
 
     if (width <= 32 || height <= 44) return;
+    // Read the palette when painting so a draw before the stylesheet loads can recover.
+    const styles = getComputedStyle(canvas);
+    const water = styles.getPropertyValue('--map-water').trim();
+
+    if (!water) return;
+
+    const land = {
+      north: styles.getPropertyValue('--map-north').trim(),
+      south: styles.getPropertyValue('--map-south').trim(),
+    };
+
+    const grid = styles.getPropertyValue('--map-grid').trim();
+    const deviceColor = styles.getPropertyValue('--map-device').trim();
+    const selectedColor = styles.getPropertyValue('--map-selected').trim();
+    const navy = styles.getPropertyValue('--navy').trim();
+    const muted = styles.getPropertyValue('--muted').trim();
+    const primary = styles.getPropertyValue('--primary').trim();
+    const surface = styles.getPropertyValue('--surface').trim();
     const ratio = window.devicePixelRatio || 1;
     const pixelWidth = Math.round(width * ratio);
     const pixelHeight = Math.round(height * ratio);
@@ -71,7 +99,9 @@ export function setupZoneMap(
       (height - 44) / (north - south),
     );
 
-    const center = centerOnDevice ? device?.point : undefined;
+    const center =
+      zoomToSelection && active ? (active.point ?? device?.point ?? zoneCenter(active)) : undefined;
+
     const [centerLon, centerLat] = center ?? [(west + east) / 2, (north + south) / 2];
     const scale = center ? fit * 1.65 : fit;
     const scaleX = scale * longitudeScale;
@@ -232,6 +262,7 @@ export function setupZoneMap(
   };
 
   new ResizeObserver(draw).observe(canvas);
+  window.addEventListener('pageshow', draw);
   canvas.addEventListener('click', event => {
     if (!projection) return;
     const { left, top, scaleX, scale } = projection;
@@ -248,7 +279,7 @@ export function setupZoneMap(
   return (selection, location, centered) => {
     active = selection;
     device = location;
-    centerOnDevice = centered;
+    zoomToSelection = centered;
     draw();
   };
 }

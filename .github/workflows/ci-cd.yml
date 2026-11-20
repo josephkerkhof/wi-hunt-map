@@ -45,6 +45,10 @@ jobs:
       group: cloudflare-pages-production
       queue: max
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: vars.CLOUDFLARE_ALERTS_ENABLED == 'true'
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: pages-dist
@@ -66,6 +70,16 @@ jobs:
           else
             echo "A newer commit is on main. Skipping this deployment."
           fi
+      - name: Install alert Worker dependencies
+        if: steps.main.outputs.current == 'true' && vars.CLOUDFLARE_ALERTS_ENABLED == 'true'
+        run: npm ci
+      - name: Publish the alert Worker
+        if: steps.main.outputs.current == 'true' && vars.CLOUDFLARE_ALERTS_ENABLED == 'true'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: '"$RUNNER_TEMP/cloudflare/node_modules/.bin/wrangler" deploy --config worker/wrangler.jsonc'
       - name: Publish the site
         if: steps.main.outputs.current == 'true'
         env:

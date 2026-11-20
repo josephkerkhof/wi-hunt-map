@@ -1,4 +1,6 @@
 import type { Point } from './area-data';
+import { setupAlertControls } from './alert-controls';
+import { $ } from './elements';
 import {
   AREAS,
   FIRST_DATE,
@@ -7,6 +9,7 @@ import {
   clockParts,
   dailyHours,
   isArea,
+  isLocationChoice,
   isZone,
   liveHours,
   locate,
@@ -14,6 +17,7 @@ import {
   type LocationChoice,
   type LocationError,
 } from './hours';
+import { setupLocalNotificationTest } from './local-notification-test';
 import { isOnMap, setupZoneMap, type DeviceLocation } from './zone-map';
 
 type Selection = LocationChoice & { point?: Point };
@@ -25,21 +29,12 @@ interface BeforeInstallPromptEvent extends Event {
 declare global {
   interface Navigator {
     getInstalledRelatedApps?(): Promise<{ platform: string }[]>;
+    readonly standalone?: boolean;
   }
 
   interface WindowEventMap {
     beforeinstallprompt: BeforeInstallPromptEvent;
   }
-}
-
-function $(id: string): HTMLElement;
-function $<T extends HTMLElement>(id: string, type: new () => T): T;
-function $(id: string, type: new () => HTMLElement = HTMLElement): HTMLElement {
-  const node = document.getElementById(id);
-
-  if (!(node instanceof type)) throw new Error(`Missing or unexpected element #${id}`);
-
-  return node;
 }
 
 const todayDate = $('today-date', HTMLTimeElement);
@@ -48,7 +43,6 @@ const sheetHours = $('sheet-hours');
 const sheetDetails = $('sheet-details');
 const hoursPanel = $('hours-panel');
 const gpsButton = $('gps', HTMLButtonElement);
-const mapView = $('map-view', HTMLButtonElement);
 const zoneDialog = $('zone-dialog', HTMLDialogElement);
 const areaInput = $('area', HTMLSelectElement);
 const zoneInput = $('zone', HTMLSelectElement);
@@ -86,18 +80,7 @@ let today = wisconsinDate();
 let showLive = true;
 let locating = false;
 let deviceLocation: DeviceLocation | null = null;
-let centeredOnDevice = false;
-
-function isStoredLocation(value: unknown): value is LocationChoice {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'area' in value &&
-    isArea(value.area) &&
-    'zone' in value &&
-    isZone(value.zone)
-  );
-}
+let alertsArmed = false;
 
 function loadLocation(): Selection | null {
   try {
@@ -106,7 +89,7 @@ function loadLocation(): Selection | null {
     if (stored === null) return null;
     const saved: unknown = JSON.parse(stored);
 
-    if (isStoredLocation(saved)) {
+    if (isLocationChoice(saved)) {
       const { area, zone } = saved;
 
       return { area, zone };
@@ -131,6 +114,7 @@ function useLocation(choice: LocationChoice, point?: Point) {
   locationMessage('');
   renderLocation();
   renderHours();
+  renderAlerts(selection);
 }
 
 function locationMessage(message: string) {
@@ -228,9 +212,7 @@ function renderMap() {
   const location = deviceLocation && isOnMap(deviceLocation.point) ? deviceLocation : null;
   $('device-key').hidden = !location;
   $('selection-key').hidden = !selection?.point;
-  mapView.hidden = !location;
-  mapView.textContent = centeredOnDevice ? 'All zones' : 'Center on me';
-  updateMap(selection, location, centeredOnDevice);
+  updateMap(selection, location, alertsArmed);
 }
 
 function renderLocation() {
@@ -277,7 +259,6 @@ gpsButton.addEventListener('click', () => {
       deviceLocation = canUseFix ? { point, accuracy } : null;
       locating = false;
       const useForZone = selection === selectedAtStart;
-      centeredOnDevice = useForZone && canUseFix && isOnMap(point);
 
       if (!useForZone) {
         renderLocation();
@@ -297,7 +278,6 @@ gpsButton.addEventListener('click', () => {
     error => {
       locating = false;
       deviceLocation = null;
-      centeredOnDevice = false;
       renderLocation();
 
       if (selection !== selectedAtStart) return;
@@ -325,8 +305,8 @@ const updateMap = setupZoneMap($('zone-map', HTMLCanvasElement), (point, accurac
   useLocation(choice, point);
 });
 
-mapView.addEventListener('click', () => {
-  centeredOnDevice = !centeredOnDevice;
+const renderAlerts = setupAlertControls(armed => {
+  alertsArmed = armed;
   renderMap();
 });
 
@@ -366,6 +346,7 @@ function updateToday() {
 
   if (current !== today) renderHours(now);
   else if (!liveToggle.hidden && showLive) renderLiveHours(now);
+  renderAlerts(selection, now);
 }
 
 liveToggle.addEventListener('click', () => {
@@ -375,7 +356,7 @@ liveToggle.addEventListener('click', () => {
   renderHours();
 });
 
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+if ('serviceWorker' in navigator) {
   const workers = navigator.serviceWorker;
   let controller = workers.controller;
   let reloading = false;
@@ -388,7 +369,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     controller = nextController;
 
     // The first worker can claim this page without replacing a running release.
-    if (!isUpdate) return;
+    if (!isUpdate || import.meta.env.DEV) return;
 
     const reloadWhenActivated = () => {
       if (
@@ -525,3 +506,7 @@ $('coverage').textContent = `Bundled hours cover ${firstDay} through ${lastDay}.
 renderLocation();
 
 renderHours();
+
+renderAlerts(selection);
+
+setupLocalNotificationTest();

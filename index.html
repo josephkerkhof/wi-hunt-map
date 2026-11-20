@@ -53,8 +53,29 @@
             <h2 id="map-heading">Wisconsin zones</h2>
             <p id="map-guide">Tap a spot to select an area and zone.</p>
           </div>
-          <button class="button button-outline" id="map-view" type="button" hidden>
-            All zones
+          <button
+            class="button button-outline"
+            id="alert-bell"
+            type="button"
+            aria-haspopup="dialog"
+            aria-controls="alert-dialog"
+            data-active="false"
+          >
+            <span class="alert-icon" id="alert-icon-off" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path
+                  d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4a1.5 1.5 0 0 0-3 0v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5z"
+                />
+              </svg>
+            </span>
+            <span class="alert-icon" id="alert-icon-on" aria-hidden="true" hidden>
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path
+                  d="M7.58 4.08 6.15 2.65A10.45 10.45 0 0 0 1 11h2a8.47 8.47 0 0 1 4.58-6.92zM21 11h2a10.45 10.45 0 0 0-5.15-8.35l-1.42 1.43A8.47 8.47 0 0 1 21 11zm-3 .5c0-3.07-1.63-5.64-4.5-6.32V4.5a1.5 1.5 0 0 0-3 0v.68C7.64 5.86 6 8.42 6 11.5V16l-2 2v1h16v-1l-2-2zM12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2z"
+                />
+              </svg>
+            </span>
+            <span id="alert-bell-label">Alerts off</span>
           </button>
         </div>
         <div class="map-frame">
@@ -184,6 +205,36 @@
         </noscript>
       </section>
     </main>
+
+    <dialog id="alert-dialog" aria-labelledby="alert-dialog-title">
+      <div class="dialog-heading">
+        <h2 id="alert-dialog-title">Shooting hours alerts</h2>
+        <button
+          type="button"
+          class="close-button"
+          id="close-alerts"
+          aria-label="Close alerts"
+          data-close="alert-dialog"
+          autofocus
+        >
+          ×
+        </button>
+      </div>
+      <p class="notice alert-summary" id="alert-summary" role="status"></p>
+      <p class="hint" id="alert-hint"></p>
+      <p class="hint" id="alert-feedback" role="status"></p>
+      <div class="dialog-actions">
+        <button type="button" class="button button-primary" id="enable-alerts" hidden>
+          Enable alerts
+        </button>
+        <button type="button" class="button button-outline" id="disable-alerts" hidden>
+          Turn off alerts
+        </button>
+        <button type="button" class="button button-primary" id="retry-alerts" hidden>
+          Try again
+        </button>
+      </div>
+    </dialog>
 
     <dialog id="zone-dialog" aria-labelledby="zone-dialog-title">
       <form id="zone-form">

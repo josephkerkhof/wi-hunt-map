@@ -1,0 +1,16 @@
+{
+  "name": "field-hours-alerts",
+  "main": "alerts.ts",
+  "compatibility_date": "2026-02-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "deer.kerkhof.dev/api/alerts*", "zone_name": "kerkhof.dev" }],
+  "durable_objects": {
+    "bindings": [{ "name": "ALERTS", "class_name": "EventAlerts" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["EventAlerts"] }],
+  "vars": {
+    "VAPID_SUBJECT": "https://deer.kerkhof.dev/",
+  },
+}

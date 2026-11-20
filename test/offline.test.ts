@@ -11,11 +11,13 @@ import { test } from 'vitest';
 
 type WorkerEvent = {
   request?: Pick<Request, 'method' | 'mode' | 'url'>;
+  data?: { json(): { title: string; body: string; tag: string } };
+  notification?: { close(): void };
   waitUntil(work: Promise<void>): void;
   respondWith(work: Promise<Buffer | undefined>): void;
 };
 
-type EventName = 'install' | 'activate' | 'fetch';
+type EventName = 'install' | 'activate' | 'fetch' | 'push' | 'notificationclick';
 
 const run = promisify(execFile);
 const vite = fileURLToPath(new URL('./bin/vite.js', import.meta.resolve('vite/package.json')));
@@ -37,9 +39,16 @@ test('the production worker serves the complete install from cache with the netw
   let downloadComplete = false;
   let skippedWaiting = false;
   let claimed = false;
+  let displayed: { title: string; options: NotificationOptions } | undefined;
+  let opened = '';
 
   const worker = {
-    registration: { scope },
+    registration: {
+      scope,
+      showNotification: (title: string, options: NotificationOptions) => {
+        displayed = { title, options };
+      },
+    },
     addEventListener: (name: EventName, handler: (event: WorkerEvent) => void) => {
       handlers.set(name, handler);
     },
@@ -50,6 +59,10 @@ test('the production worker serves the complete install from cache with the netw
     clients: {
       claim: () => {
         claimed = true;
+      },
+      matchAll: () => [],
+      openWindow: (url: string) => {
+        opened = url;
       },
     },
   };
@@ -153,4 +166,24 @@ test('the production worker serves the complete install from cache with the netw
   }
 
   assert.equal(await request('https://dnr.wisconsin.gov/'), undefined);
+
+  const title = 'Shooting hours close in 3 min';
+  const body = '4:34 PM CT · Northern Zone A';
+  const tag = 'field-hours-1795300260000';
+  await dispatch('push', { data: { json: () => ({ title, body, tag }) } });
+  assert.equal(displayed?.title, title);
+  assert.equal(displayed?.options.body, body);
+  assert.equal(displayed?.options.tag, tag);
+  assert.equal(displayed?.options.icon, new URL('assets/icon-192.png', scope).href);
+
+  let closed = false;
+  await dispatch('notificationclick', {
+    notification: {
+      close: () => {
+        closed = true;
+      },
+    },
+  });
+  assert.equal(closed, true);
+  assert.equal(opened, scope);
 });

@@ -53,6 +53,17 @@ export function isZone(value: unknown): value is Zone {
   return typeof value === 'string' && Object.hasOwn(OFFSETS, value);
 }
 
+export function isLocationChoice(value: unknown): value is LocationChoice {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'area' in value &&
+    isArea(value.area) &&
+    'zone' in value &&
+    isZone(value.zone)
+  );
+}
+
 function hasHours(date: string): date is keyof typeof HOURS {
   return Object.hasOwn(HOURS, date);
 }
@@ -70,7 +81,7 @@ export function dailyHours(date: string, selection: LocationChoice | null) {
   return { opens: opens + offset, closes: closes + offset };
 }
 
-function scheduledTime(date: string, minutes: number) {
+export function scheduledTime(date: string, minutes: number) {
   // Published hours are after the early-morning clock change on daylight saving days.
   const midday = new Date(`${date}T18:00:00Z`);
 
