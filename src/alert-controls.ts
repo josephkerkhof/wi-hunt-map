@@ -138,6 +138,16 @@ function supportMessage() {
   return '';
 }
 
+function sameKey(key: ArrayBuffer | null, expected: Uint8Array) {
+  if (!key || key.byteLength !== expected.byteLength) return false;
+  const bytes = new Uint8Array(key);
+
+  return bytes.every((byte, index) => byte === expected[index]);
+}
+
+const stoppedMessage =
+  'Alerts stopped because this device’s notification subscription changed. Turn them on again.';
+
 function writeText(element: HTMLElement, text: string) {
   if (element.textContent !== text) element.textContent = text;
 }
@@ -166,6 +176,19 @@ export function setupAlertControls(onArmedChange: (armed: boolean) => void) {
   let schedule: AlertSchedule | null = null;
   let offered: AlertSchedule | null = null;
   let message = '';
+  // Set when alerts stop without the user turning them off. Cleared by the next action.
+  let notice = '';
+  // Whether the server confirmed the schedule since this page loaded.
+  let confirmed = false;
+
+  function updateBell() {
+    const unconfirmed = schedule !== null && !confirmed && (refreshFailed || !navigator.onLine);
+    const label = schedule ? (unconfirmed ? 'Check alerts' : 'Alerts on') : 'Alerts off';
+    bell.dataset.active = String(schedule !== null);
+    $('alert-icon-off').hidden = schedule !== null;
+    $('alert-icon-on').hidden = schedule === null;
+    writeText($('alert-bell-label'), label);
+  }
 
   function setSchedule(next: AlertSchedule | null) {
     if (
@@ -183,15 +206,13 @@ export function setupAlertControls(onArmedChange: (armed: boolean) => void) {
       // The current schedule is still available from the server.
     }
 
-    bell.dataset.active = String(next !== null);
-    $('alert-icon-off').hidden = next !== null;
-    $('alert-icon-on').hidden = next === null;
-    writeText($('alert-bell-label'), next ? 'Alerts on' : 'Alerts off');
+    updateBell();
     onArmedChange(next !== null);
   }
 
   function render(now = new Date()) {
     if (schedule && schedule.event.at <= now.getTime()) setSchedule(null);
+    updateBell();
 
     if (!dialog.open) return;
     const active = schedule !== null;
@@ -248,7 +269,7 @@ export function setupAlertControls(onArmedChange: (armed: boolean) => void) {
 
     const issue = configurationFailed
       ? 'Can’t connect to the alert service.'
-      : message || (retryStatus ? 'Couldn’t confirm alert status.' : '');
+      : message || (retryStatus ? 'Couldn’t confirm alert status.' : '') || (active ? '' : notice);
 
     writeText(feedback, offline || progress || issue || (active ? '' : blocked));
 
@@ -306,11 +327,24 @@ export function setupAlertControls(onArmedChange: (armed: boolean) => void) {
         : null;
 
       if (version !== actionVersion) return;
-      const confirmed = subscription ? await requestSchedule(subscription, 'GET') : null;
+
+      // A subscription made with a previous server key can no longer receive alerts.
+      const usable =
+        subscription &&
+        (!publicKey || sameKey(subscription.options.applicationServerKey, publicKey));
+
+      const current = usable ? await requestSchedule(subscription, 'GET') : null;
 
       if (version !== actionVersion) return;
+      const expected = schedule;
       refreshFailed = false;
-      setSchedule(confirmed);
+      confirmed = true;
+
+      if (!current && checkSubscription && expected && expected.event.at > Date.now()) {
+        notice = stoppedMessage;
+      }
+
+      setSchedule(current);
     } catch (error) {
       if (version === actionVersion) refreshFailed = true;
       console.warn('Couldn’t check alert status.', error);
@@ -348,6 +382,14 @@ export function setupAlertControls(onArmedChange: (armed: boolean) => void) {
     render();
 
     try {
+      const existing = await waitForBrowser(registration.pushManager.getSubscription());
+
+      // Subscribing with a new server key fails while the old subscription exists.
+      if (existing && !sameKey(existing.options.applicationServerKey, publicKey)) {
+        await requestSchedule(existing, 'DELETE').catch(() => null);
+        await waitForBrowser(existing.unsubscribe());
+      }
+
       const subscription = await waitForBrowser(
         registration.pushManager.subscribe({
           userVisibleOnly: true,
@@ -364,6 +406,8 @@ export function setupAlertControls(onArmedChange: (armed: boolean) => void) {
       });
 
       setSchedule(await requestSchedule(subscription, 'PUT', body));
+      confirmed = true;
+      notice = '';
     } catch (error) {
       message =
         Notification.permission === 'denied'
@@ -392,6 +436,8 @@ export function setupAlertControls(onArmedChange: (armed: boolean) => void) {
       const subscription = await waitForBrowser(registration.pushManager.getSubscription());
 
       setSchedule(subscription ? await requestSchedule(subscription, 'DELETE') : null);
+      confirmed = true;
+      notice = '';
     } catch (error) {
       message =
         error instanceof AlertRequestError ? error.message : 'Couldn’t turn off alerts. Try again.';

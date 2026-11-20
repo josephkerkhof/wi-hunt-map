@@ -8,6 +8,15 @@ const CACHE_NAME = CACHE_PREFIX + RELEASE;
 const scope = new URL(self.registration.scope);
 const urls = PRECACHE.map(path => new URL(path, scope).href);
 const index = new URL('index.html', scope).href;
+const alertsApi = new URL('api/alerts', scope).href;
+
+// Not yet in TypeScript's WebWorker library.
+interface PushSubscriptionChangeEvent extends ExtendableEvent {
+  readonly oldSubscription: PushSubscription | null;
+  readonly newSubscription: PushSubscription | null;
+}
+
+type StoredSchedule = { area: string; zone: string; event: { at: number } };
 
 function isAlertMessage(value: unknown): value is { title: string; body: string; tag: string } {
   return (
@@ -71,21 +80,109 @@ self.addEventListener('fetch', event => {
   );
 });
 
-self.addEventListener('push', event => {
+function readPush(event: PushEvent) {
   try {
     const message: unknown = event.data?.json();
 
-    if (!isAlertMessage(message)) return;
-    event.waitUntil(
-      self.registration.showNotification(message.title, {
-        body: message.body,
-        tag: message.tag,
-        icon: new URL('assets/icon-192.png', scope).href,
-      }),
-    );
+    if (isAlertMessage(message)) return message;
   } catch {
-    // Ignore malformed messages.
+    // Show the fallback below.
   }
+
+  return null;
+}
+
+self.addEventListener('push', event => {
+  // Every push must show a notification, or the browser can revoke the subscription.
+  const message = readPush(event) ?? {
+    title: 'Field Hours',
+    body: 'Open Field Hours to check today’s shooting hours.',
+    tag: 'field-hours-update',
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(message.title, {
+      body: message.body,
+      tag: message.tag,
+      icon: new URL('assets/icon-192.png', scope).href,
+    }),
+  );
+});
+
+// Keep in sync with subscriptionToken in src/alerts.ts. The service worker is built without imports.
+async function subscriptionToken(subscription: PushSubscription) {
+  const auth = subscription.toJSON().keys?.auth;
+
+  if (!auth) return null;
+  const input = new TextEncoder().encode(`${subscription.endpoint}\n${auth}`);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', input));
+
+  return Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function alertRequest(token: string, method: string, body?: string) {
+  return fetch(alertsApi, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body,
+  });
+}
+
+function isStoredSchedule(value: unknown): value is { schedule: StoredSchedule } {
+  if (typeof value !== 'object' || value === null || !('schedule' in value)) return false;
+  const schedule: unknown = value.schedule;
+
+  return (
+    typeof schedule === 'object' &&
+    schedule !== null &&
+    'area' in schedule &&
+    typeof schedule.area === 'string' &&
+    'zone' in schedule &&
+    typeof schedule.zone === 'string' &&
+    'event' in schedule &&
+    typeof schedule.event === 'object' &&
+    schedule.event !== null &&
+    'at' in schedule.event &&
+    typeof schedule.event.at === 'number'
+  );
+}
+
+/** Moves armed alerts from a replaced push subscription to its replacement. */
+async function moveAlerts(previous: PushSubscription | null, next: PushSubscription | null) {
+  const previousToken = previous && (await subscriptionToken(previous));
+
+  if (!previous || !previousToken) return;
+  const response = await alertRequest(previousToken, 'GET');
+  const data: unknown = await response.json().catch(() => null);
+
+  if (!response.ok || !isStoredSchedule(data)) return;
+  const { area, zone, event } = data.schedule;
+
+  const replacement =
+    next ??
+    (await self.registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: previous.options.applicationServerKey,
+    }));
+
+  const token = await subscriptionToken(replacement);
+
+  if (!token) return;
+  const subscription = replacement.toJSON();
+  const body = JSON.stringify({ area, zone, eventAt: event.at, subscription });
+  const armed = await alertRequest(token, 'PUT', body);
+
+  if (armed.ok) await alertRequest(previousToken, 'DELETE');
+}
+
+self.addEventListener('pushsubscriptionchange', event => {
+  // SAFETY: browsers dispatch pushsubscriptionchange only as a PushSubscriptionChangeEvent.
+  const change = event as PushSubscriptionChangeEvent;
+  change.waitUntil(
+    moveAlerts(change.oldSubscription, change.newSubscription).catch(() => {
+      // The app explains that alerts stopped the next time it checks.
+    }),
+  );
 });
 
 self.addEventListener('notificationclick', event => {

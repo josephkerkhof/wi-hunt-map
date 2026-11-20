@@ -10,6 +10,13 @@
     "bindings": [{ "name": "ALERTS", "class_name": "EventAlerts" }],
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["EventAlerts"] }],
+  // Limits per client IP. Mobile carriers can share an IP, so the read limit is generous.
+  "ratelimits": [
+    { "name": "ALERT_REQUESTS", "namespace_id": "1001", "simple": { "limit": 120, "period": 60 } },
+    { "name": "ALERT_CHANGES", "namespace_id": "1002", "simple": { "limit": 20, "period": 60 } },
+  ],
+  // Keep delivery logs so missed alerts can be investigated after the fact.
+  "observability": { "enabled": true },
   "vars": {
     "VAPID_SUBJECT": "https://deer.kerkhof.dev/",
   },

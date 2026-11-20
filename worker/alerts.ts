@@ -1,18 +1,27 @@
 import { DurableObject } from 'cloudflare:workers';
 import { generateRequestDetails, type PushSubscription } from 'web-push';
-import {
-  MINUTE_MS,
-  nextShootingEvent,
-  reminderTimes,
-  subscriptionToken,
-  type AlertSchedule,
-} from '../src/alerts';
+import { MINUTE_MS, nextShootingEvent, subscriptionToken, type AlertSchedule } from '../src/alerts';
 import { isLocationChoice, type LocationChoice } from '../src/hours';
 import { alertNotification } from './alert-notification';
+import {
+  armAlerts,
+  completeDelivery,
+  deliveryExpires,
+  planAlarm,
+  pushOutcome,
+  readArmed,
+  sameDelivery,
+  type ArmedAlerts,
+  type Delivery,
+  type PushOutcome,
+  type StoredAlerts,
+} from './alert-queue';
 import { LocalNotificationTest } from './local-notification-test';
 
 interface Env {
   ALERTS: DurableObjectNamespace<EventAlerts>;
+  ALERT_REQUESTS: RateLimit;
+  ALERT_CHANGES: RateLimit;
   LOCAL_ALERT_TEST_TOKEN?: string;
   VAPID_PUBLIC_KEY: string;
   VAPID_PRIVATE_KEY: string;
@@ -21,16 +30,10 @@ interface Env {
 
 type AlertRequest = LocationChoice & { eventAt: number; subscription: PushSubscription };
 
-interface ArmedAlerts {
-  id: string;
-  schedule: AlertSchedule;
-  subscription: PushSubscription;
-  pending: number[] | null;
-}
-
 const key = 'armed';
 const api = '/api/alerts';
 const maxBodyBytes = 8192;
+const pushTimeoutMs = 10_000;
 
 function isPushSubscription(value: unknown): value is PushSubscription {
   if (
@@ -144,6 +147,13 @@ export default {
     const token = /^Bearer ([a-f0-9]{64})$/.exec(request.headers.get('Authorization') ?? '')?.[1];
 
     if (!token) return json({}, 401);
+    const client = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+    const limiter = request.method === 'PUT' ? env.ALERT_CHANGES : env.ALERT_REQUESTS;
+
+    if (!(await limiter.limit({ key: client })).success) {
+      return json({ message: 'Too many alert requests. Wait a minute and try again.' }, 429);
+    }
+
     const alerts = env.ALERTS.getByName(token);
 
     if (request.method === 'GET') return json({ schedule: await alerts.active() });
@@ -185,7 +195,7 @@ export class EventAlerts extends DurableObject<Env> {
   }
 
   async active(): Promise<AlertSchedule | null> {
-    const armed = await this.ctx.storage.get<ArmedAlerts>(key);
+    const armed = readArmed(await this.ctx.storage.get<StoredAlerts>(key));
 
     return armed && armed.schedule.event.at > Date.now() ? armed.schedule : null;
   }
@@ -193,7 +203,7 @@ export class EventAlerts extends DurableObject<Env> {
   arm({ area, zone, eventAt, subscription }: AlertRequest) {
     return this.ctx.storage.transaction(async storage => {
       const now = new Date();
-      const current = await storage.get<ArmedAlerts>(key);
+      const current = readArmed(await storage.get<StoredAlerts>(key));
 
       if (current && current.schedule.event.at > now.getTime()) {
         const { schedule } = current;
@@ -209,11 +219,10 @@ export class EventAlerts extends DurableObject<Env> {
         return { message: 'The next event has changed. Review it before enabling alerts.' };
       }
 
-      const pending = reminderTimes(event, now.getTime());
       const schedule = { area, zone, event };
-      const armed: ArmedAlerts = { id: crypto.randomUUID(), schedule, subscription, pending };
+      const armed = armAlerts(current, schedule, subscription, now.getTime());
       await storage.put(key, armed);
-      await storage.setAlarm(pending[0] ?? event.at);
+      await storage.setAlarm(armed.queue[0]?.due ?? event.at);
 
       return { schedule };
     });
@@ -223,51 +232,71 @@ export class EventAlerts extends DurableObject<Env> {
     await this.ctx.storage.deleteAll();
   }
 
+  private async store(record: ArmedAlerts | null, alarm: number | null) {
+    const { storage } = this.ctx;
+
+    if (record && alarm !== null) {
+      await storage.put(key, record);
+      await storage.setAlarm(alarm);
+    } else {
+      await storage.delete(key);
+      await storage.deleteAlarm();
+    }
+  }
+
   async alarm() {
-    const delivery = await this.ctx.storage.transaction(async storage => {
-      const armed = await storage.get<ArmedAlerts>(key);
-
+    const plan = await this.ctx.storage.transaction(async storage => {
       // Local alarm tests from older development builds may still be queued.
-      if (!armed?.schedule) return null;
+      const armed = readArmed(await storage.get<StoredAlerts>(key));
 
-      const now = Date.now();
-      const { event } = armed.schedule;
-      const eventAlertExpires = event.at + MINUTE_MS;
+      if (!armed) return null;
+      const plan = planAlarm(armed, Date.now());
+      await this.store(plan.record, plan.alarm);
 
-      if (now >= eventAlertExpires || armed.pending === null) {
-        await storage.delete(key);
-        await storage.deleteAlarm();
-
-        return null;
-      }
-
-      if (now >= event.at) {
-        // Claim the final alert once and retain the ID for the cancellation check.
-        armed.pending = null;
-        await storage.put(key, armed);
-        await storage.setAlarm(eventAlertExpires);
-
-        return { armed, due: event.at };
-      }
-
-      const due = armed.pending.filter(at => at <= now).at(-1);
-      armed.pending = armed.pending.filter(at => at > now);
-      await storage.put(key, armed);
-      await storage.setAlarm(armed.pending[0] ?? event.at);
-
-      return due === undefined ? null : { armed, due };
+      return { ...plan, subscription: armed.subscription };
     });
 
-    if (!delivery) return;
-    const { armed, due } = delivery;
-    const expires = due + MINUTE_MS;
-    const ttl = Math.floor((expires - Date.now()) / 1000);
+    if (!plan) return;
 
-    if (ttl <= 0) return;
-    const notification = alertNotification(armed.schedule, due);
+    for (const delivery of plan.expired) {
+      console.warn('Alert expired before delivery.', describe(delivery));
+    }
+
+    if (!plan.send) return;
+    const { send } = plan;
+    const outcome = await this.deliver(plan.subscription, send);
+
+    if (!outcome) return;
+
+    if (outcome === 'delivered') console.log('Alert delivered.', describe(send));
+    else if (outcome === 'retry') console.warn('Alert delivery will be retried.', describe(send));
+    else if (outcome === 'gone') console.warn('Push subscription expired.', describe(send));
+    else console.error('Push service rejected the alert.', describe(send));
+
+    await this.ctx.storage.transaction(async storage => {
+      const armed = readArmed(await storage.get<StoredAlerts>(key));
+      const next = armed && completeDelivery(armed, send, outcome);
+
+      if (next) await this.store(next.record, next.alarm);
+    });
+  }
+
+  /** Sends one delivery. Returns null when it was cancelled or expired before sending. */
+  private async deliver(
+    subscription: PushSubscription,
+    delivery: Delivery,
+  ): Promise<PushOutcome | null> {
+    const notification = alertNotification(delivery.schedule, delivery.due);
+    const expires = deliveryExpires(delivery);
 
     try {
-      const details = generateRequestDetails(armed.subscription, JSON.stringify(notification), {
+      const current = readArmed(await this.ctx.storage.get<StoredAlerts>(key));
+      const ttl = Math.floor((expires - Date.now()) / 1000);
+
+      // Turning alerts off removes queued deliveries, including one being retried.
+      if (!current?.queue.some(queued => sameDelivery(queued, delivery)) || ttl <= 0) return null;
+
+      const details = generateRequestDetails(subscription, JSON.stringify(notification), {
         TTL: ttl,
         contentEncoding: 'aes128gcm',
         topic: notification.tag,
@@ -279,37 +308,37 @@ export class EventAlerts extends DurableObject<Env> {
         },
       });
 
-      const current = await this.ctx.storage.get<ArmedAlerts>(key);
-      const remaining = Math.floor((expires - Date.now()) / 1000);
-
-      if (current?.id !== armed.id || remaining <= 0) return;
-      const headers = new Headers(details.headers);
-      headers.set('TTL', String(remaining));
-
       const response = await fetch(details.endpoint, {
         method: details.method,
-        headers,
+        headers: new Headers(details.headers),
         body: details.body ? new Uint8Array(details.body) : null,
         redirect: 'error',
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(pushTimeoutMs),
       });
 
       await response.body?.cancel();
+      const outcome = pushOutcome(response.status);
 
-      if (response.status === 404 || response.status === 410) {
-        await this.ctx.storage.transaction(async storage => {
-          const current = await storage.get<ArmedAlerts>(key);
+      if (outcome !== 'delivered') console.warn('Push service status.', response.status);
 
-          if (current?.id !== armed.id) return;
-          await storage.delete(key);
-          await storage.deleteAlarm();
-        });
-      } else if (!response.ok) {
-        console.warn('Push delivery rejected.', response.status);
-      }
-    } catch {
-      // Avoid retrying an uncertain delivery.
-      console.warn('Push delivery failed.');
+      return outcome;
+    } catch (error) {
+      // A retry reuses the notification tag and topic, so a duplicate replaces the first.
+      console.warn('Push request failed.', error instanceof Error ? error.name : 'Error');
+
+      return 'retry';
     }
   }
+}
+
+function describe({ due, schedule }: Delivery) {
+  const { area, zone, event } = schedule;
+
+  return {
+    event: event.kind,
+    eventAt: new Date(event.at).toISOString(),
+    minutesBefore: Math.round((event.at - due) / MINUTE_MS),
+    area,
+    zone,
+  };
 }
