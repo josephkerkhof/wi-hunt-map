@@ -1,9 +1,23 @@
+import type { AlertSchedule } from '../src/alerts';
+import { alertNotification } from './alert-notification';
+
 const replies = ['shown', 'permission', 'failed', 'display-timeout'] as const;
 
 type TestReply = (typeof replies)[number] | 'unreachable' | 'unconfirmed';
 
+type TestEvent = AlertSchedule['event']['kind'];
+
+type TestRequest = { device: string } & ({ message: string } | { event: TestEvent });
+
+interface TestPoll {
+  device: string;
+  origin: string;
+  reply: string;
+  eventAlerts?: true;
+}
+
 interface PendingTest {
-  notification: { id: string; message: string };
+  notification: { id: string; message: string; title?: string };
   complete: (reply: TestReply) => void;
   sent: boolean;
   received: boolean;
@@ -12,6 +26,7 @@ interface PendingTest {
 interface TestDevice {
   label: string;
   lastSeen: number;
+  eventAlerts?: true;
   pending?: PendingTest;
 }
 
@@ -26,12 +41,18 @@ const replyMessages = {
     'The app received the test. Check the device’s Notification Center before trying again.',
 } satisfies Record<TestReply, string>;
 
-function isTestRequest(value: unknown): value is { device: string; message: string } {
+function isTestRequest(value: unknown): value is TestRequest {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    !('device' in value) ||
+    typeof value.device !== 'string'
+  )
+    return false;
+
+  if ('event' in value) return value.event === 'opening' || value.event === 'closing';
+
   return (
-    typeof value === 'object' &&
-    value !== null &&
-    'device' in value &&
-    typeof value.device === 'string' &&
     'message' in value &&
     typeof value.message === 'string' &&
     value.message.trim().length > 0 &&
@@ -39,7 +60,14 @@ function isTestRequest(value: unknown): value is { device: string; message: stri
   );
 }
 
-function isPoll(value: unknown): value is { device: string; origin: string; reply: string } {
+function testEventNotification(kind: TestEvent) {
+  const at = Date.parse(kind === 'opening' ? '2026-11-21T12:28:00Z' : '2026-11-21T22:34:00Z');
+  const { title, body } = alertNotification({ area: 'north', zone: 'A', event: { kind, at } }, at);
+
+  return { title, message: body };
+}
+
+function isPoll(value: unknown): value is TestPoll {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -50,7 +78,8 @@ function isPoll(value: unknown): value is { device: string; origin: string; repl
     typeof value.origin === 'string' &&
     'reply' in value &&
     typeof value.reply === 'string' &&
-    value.reply.length <= 64
+    value.reply.length <= 64 &&
+    (!('eventAlerts' in value) || value.eventAlerts === true)
   );
 }
 
@@ -81,15 +110,32 @@ export class LocalNotificationTest {
     if (request.method !== 'POST') return json({}, 405);
     const data: unknown = await request.json().catch(() => null);
 
-    if (!isTestRequest(data))
-      return json({ message: 'Enter a message of 1 to 200 characters.' }, 400);
+    if (!isTestRequest(data)) {
+      return json(
+        {
+          message: 'Choose an opening or closing alert, or enter a message of 1 to 200 characters.',
+        },
+        400,
+      );
+    }
+
     const device = this.devices.get(data.device);
 
     if (!device) return json({ message: 'Open the selected app and try again.' }, 404);
 
+    if ('event' in data && !device.eventAlerts) {
+      return json(
+        { message: 'Reopen Field Hours to load the updated app, then try the event test again.' },
+        409,
+      );
+    }
+
     if (device.pending)
       return json({ message: 'A test is already in progress for this app.' }, 409);
     const id = crypto.randomUUID();
+
+    const notification =
+      'event' in data ? testEventNotification(data.event) : { message: data.message.trim() };
 
     const reply = await new Promise<TestReply>(resolve => {
       const timer = setTimeout(
@@ -103,7 +149,7 @@ export class LocalNotificationTest {
       }
 
       device.pending = {
-        notification: { id, message: data.message.trim() },
+        notification: { id, ...notification },
         complete: finish,
         sent: false,
         received: false,
@@ -138,6 +184,7 @@ export class LocalNotificationTest {
     };
 
     device.lastSeen = now;
+    device.eventAlerts = data.eventAlerts;
     this.devices.set(data.device, device);
     const test = device.pending;
 

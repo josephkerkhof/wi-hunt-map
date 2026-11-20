@@ -197,7 +197,6 @@ export function setupAlertControls(onArmedChange: (armed: boolean) => void) {
     const active = schedule !== null;
     const location = schedule ?? selection;
     const event = schedule?.event ?? (location && nextShootingEvent(location, now));
-    const pending = event ? reminderTimes(event, now.getTime()) : [];
     offered = location && event ? { area: location.area, zone: location.zone, event } : null;
 
     const offline = navigator.onLine ? '' : 'Connect to the internet to manage alerts.';
@@ -220,15 +219,19 @@ export function setupAlertControls(onArmedChange: (armed: boolean) => void) {
 
     summary.dataset.active = String(active);
     writeText(summary, details);
-    const offsets = pending.map(at => ((event?.at ?? at) - at) / MINUTE_MS);
-    const minutes = listFormat.format(offsets.map(String));
     let guidance = '';
 
-    if (active) guidance = 'This set turns off automatically at the scheduled time.';
-    else if (event && pending.length === 0)
-      guidance = 'The last reminder for this event has passed.';
-    else if (event)
-      guidance = `Reminders ${minutes} ${offsets.length === 1 && offsets[0] === 1 ? 'minute' : 'minutes'} before this event only.`;
+    if (event) {
+      const action = event.kind === 'opening' ? 'open' : 'close';
+      const offsets = reminderTimes(event, now.getTime()).map(at => (event.at - at) / MINUTE_MS);
+      const minutes = listFormat.format(offsets.map(String));
+      const unit = offsets.length === 1 && offsets[0] === 1 ? 'minute' : 'minutes';
+      guidance = offsets.length
+        ? `You’ll get alerts ${minutes} ${unit} before this event and when shooting hours ${action}.`
+        : `You’ll get an alert when shooting hours ${action}.`;
+
+      if (active) guidance += ' This set turns off automatically at the scheduled time.';
+    }
 
     writeText(hint, guidance);
 
@@ -250,8 +253,7 @@ export function setupAlertControls(onArmedChange: (armed: boolean) => void) {
     writeText(feedback, offline || progress || issue || (active ? '' : blocked));
 
     const focused = actions.find(action => action === document.activeElement);
-    enable.hidden =
-      active || !event || pending.length === 0 || Boolean(unsupported) || configurationFailed;
+    enable.hidden = active || !event || Boolean(unsupported) || configurationFailed;
     enable.setAttribute('aria-disabled', String(Boolean(blocked || busy)));
     disable.hidden = !active;
     disable.setAttribute(

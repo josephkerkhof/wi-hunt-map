@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { stdin, stdout } from 'node:process';
 import { createInterface } from 'node:readline/promises';
-import { parseEnv } from 'node:util';
+import { parseArgs, parseEnv } from 'node:util';
 
 const api = 'http://127.0.0.1:8787/api/alerts/test';
 
@@ -25,6 +25,25 @@ async function request(token, method, body) {
 }
 
 async function main() {
+  const { values } = parseArgs({
+    options: {
+      event: { type: 'string' },
+      help: { type: 'boolean', short: 'h' },
+    },
+  });
+
+  const { event, help } = values;
+
+  if (help) {
+    console.log('Usage: test-notification [--event opening|closing]');
+
+    return;
+  }
+
+  if (event !== undefined && event !== 'opening' && event !== 'closing') {
+    throw new Error('Choose opening or closing for --event.');
+  }
+
   if (!stdin.isTTY) throw new Error('Run test-notification in an interactive terminal.');
 
   const config = await readFile(new URL('../worker/.dev.vars', import.meta.url), 'utf8').catch(
@@ -49,15 +68,24 @@ async function main() {
 
     if (!Number.isInteger(number) || !device) throw new Error('Choose a device from the list.');
 
-    const message =
-      (await terminal.question('Message [This is a Field Hours test notification.] ')).trim() ||
-      'This is a Field Hours test notification.';
+    let payload;
 
-    if (message.length > 200) throw new Error('Use a message of 200 characters or fewer.');
-    const confirmation = await terminal.question(`Send to ${device.label}? [y/N] `);
+    if (event) {
+      payload = { device: device.id, event };
+    } else {
+      const message =
+        (await terminal.question('Message [This is a Field Hours test notification.] ')).trim() ||
+        'This is a Field Hours test notification.';
+
+      if (message.length > 200) throw new Error('Use a message of 200 characters or fewer.');
+      payload = { device: device.id, message };
+    }
+
+    const notification = event ? `the ${event} alert ` : '';
+    const confirmation = await terminal.question(`Send ${notification}to ${device.label}? [y/N] `);
 
     if (!/^y(?:es)?$/i.test(confirmation.trim())) return;
-    const result = await request(token, 'POST', JSON.stringify({ device: device.id, message }));
+    const result = await request(token, 'POST', JSON.stringify(payload));
     console.log(result.message);
   } finally {
     terminal.close();

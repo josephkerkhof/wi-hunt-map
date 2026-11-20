@@ -22,6 +22,13 @@ devenv shell -- test-notification
 
 Choose a connected app, enter a message or accept the default, and confirm. The open app displays the notification through its service worker. Use a registered Web Push subscription to test delivery with the app closed.
 
+Use `--event` to preview the notification sent when shooting hours start or end. The preview uses a sample Central time for Northern Zone A. If the production preview was already running when the app changed, run `npm run build` and reopen Field Hours to load the updated build.
+
+```sh
+devenv shell -- test-notification --event opening
+devenv shell -- test-notification --event closing
+```
+
 ## Check changes
 
 - `npm run check` checks formatting with Oxfmt, runs Oxlint with anti-slop, type-checks the app and worker, and runs Vitest.
@@ -46,7 +53,7 @@ wrangler pages deploy dist --project-name=wi-hunt-map --branch=main
 
 ### Deploy the alert Worker
 
-The Worker handles `/api/alerts` on the production hostname. A Durable Object stores each device’s next event and wakes at its reminder times. The Worker and app use the same bundled hours.
+The Worker handles `/api/alerts` on the production hostname. A Durable Object stores each device’s next event and wakes at its reminder times and at the event itself. The Worker and app use the same bundled hours.
 
 1. Generate a dedicated production VAPID key pair with `npm exec -- web-push generate-vapid-keys --json`. Store `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` in a private `.env` file outside this repository. Keep the key pair for future deployments so browser subscriptions continue to work.
 2. Upload the Worker and its secrets from an authenticated Wrangler session.
@@ -63,7 +70,7 @@ For manual releases after setup, run `wrangler deploy --config worker/wrangler.j
 
 Open the HTTPS site while connected. On iPhone, use Safari’s Share menu and tap **Add to Home Screen**. On Android, use Chrome’s **Install app** or **Add to Home screen**. Open the installed app while online and set your hunt location. Try reopening it in airplane mode before leaving. If the phone can’t get a GPS fix, the saved zone and the manual picker work offline. The browser can remove downloaded data when site storage is cleared.
 
-To get reminders, open the bell and enable alerts for the opening or closing shown. Field Hours sends any remaining 10-, 5-, 3-, and 1-minute reminders for that event and turns alerts off when it arrives. Each set uses the area and zone you confirmed when enabling it. Push delivery needs a connection. On a paired Apple Watch, notifications follow iPhone mirroring settings. [Apple Watch notifications](https://support.apple.com/en-us/108274)
+To get reminders, open the bell and enable alerts for the opening or closing shown. Field Hours sends any remaining 10-, 5-, 3-, and 1-minute reminders, then sends a final alert when shooting hours start or end. The set turns off automatically. Each set uses the area and zone you confirmed when enabling it. Push delivery needs a connection. On a paired Apple Watch, notifications follow iPhone mirroring settings. [Apple Watch notifications](https://support.apple.com/en-us/108274)
 
 If GPS is near a boundary, confirm the zone using the DNR map and choose the area and zone manually. Times are shown in Wisconsin Central time as published in the tables. Check the applicable season dates, equipment rules, and local restrictions for the hunt. [DNR deer regulations](https://dnr.wisconsin.gov/topic/hunt/deer)
 

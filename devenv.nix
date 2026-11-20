@@ -13,7 +13,7 @@
   };
 
   scripts.test-notification = {
-    exec = ''exec node "$DEVENV_ROOT/tools/test-notification.mjs"'';
+    exec = ''exec node "$DEVENV_ROOT/tools/test-notification.mjs" "$@"'';
     description = "Send one test notification to a local Field Hours app";
   };
 

@@ -4,22 +4,29 @@ function isTestEnabled(value: unknown): value is { localTest: true } {
   );
 }
 
-function isTestNotification(value: unknown): value is { id: string; message: string } {
+interface TestNotification {
+  id: string;
+  message: string;
+  title?: string;
+}
+
+function isTestNotification(value: unknown): value is TestNotification {
   return (
     typeof value === 'object' &&
     value !== null &&
     'id' in value &&
     typeof value.id === 'string' &&
     'message' in value &&
-    typeof value.message === 'string'
+    typeof value.message === 'string' &&
+    (!('title' in value) || typeof value.title === 'string')
   );
 }
 
-async function showTestNotification(id: string, message: string) {
+async function showTestNotification({ id, message, title = 'Field Hours test' }: TestNotification) {
   if (Notification.permission !== 'granted') return 'permission';
   const registration = await navigator.serviceWorker.ready;
 
-  await registration.showNotification('Field Hours test', {
+  await registration.showNotification(title, {
     body: message,
     icon: new URL('assets/icon-192.png', registration.scope).href,
     tag: `field-hours-test-${id}`,
@@ -28,14 +35,14 @@ async function showTestNotification(id: string, message: string) {
   return 'shown';
 }
 
-function displayTestNotification(id: string, message: string) {
+function displayTestNotification(notification: TestNotification) {
   let timer: number | undefined;
 
   const deadline = new Promise<'display-timeout'>(resolve => {
     timer = window.setTimeout(() => resolve('display-timeout'), 5000);
   });
 
-  return Promise.race([showTestNotification(id, message).catch(() => 'failed'), deadline]).finally(
+  return Promise.race([showTestNotification(notification).catch(() => 'failed'), deadline]).finally(
     () => window.clearTimeout(timer),
   );
 }
@@ -55,7 +62,7 @@ export function setupLocalNotificationTest() {
     return fetch(testUrl, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device, origin: location.origin, reply }),
+      body: JSON.stringify({ device, origin: location.origin, reply, eventAlerts: true }),
       keepalive: reply !== '',
       signal: AbortSignal.timeout(5000),
     });
@@ -85,11 +92,11 @@ export function setupLocalNotificationTest() {
       const notification: unknown = await response.json();
 
       if (!isTestNotification(notification)) return;
-      const { id, message } = notification;
+      const { id } = notification;
       const receipt = await contactWorker(`${id}:received`);
 
       if (!receipt.ok) return;
-      const result = await displayTestNotification(id, message);
+      const result = await displayTestNotification(notification);
       await contactWorker(`${id}:${result}`);
     } catch {
       // The local Worker can restart while the app is open.

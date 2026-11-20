@@ -7,7 +7,8 @@ import {
   subscriptionToken,
   type AlertSchedule,
 } from '../src/alerts';
-import { AREAS, isLocationChoice, type LocationChoice } from '../src/hours';
+import { isLocationChoice, type LocationChoice } from '../src/hours';
+import { alertNotification } from './alert-notification';
 import { LocalNotificationTest } from './local-notification-test';
 
 interface Env {
@@ -24,18 +25,12 @@ interface ArmedAlerts {
   id: string;
   schedule: AlertSchedule;
   subscription: PushSubscription;
-  pending: number[];
+  pending: number[] | null;
 }
 
 const key = 'armed';
 const api = '/api/alerts';
 const maxBodyBytes = 8192;
-
-const eventTime = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'America/Chicago',
-  hour: 'numeric',
-  minute: '2-digit',
-});
 
 function isPushSubscription(value: unknown): value is PushSubscription {
   if (
@@ -215,13 +210,10 @@ export class EventAlerts extends DurableObject<Env> {
       }
 
       const pending = reminderTimes(event, now.getTime());
-      const first = pending[0];
-
-      if (first === undefined) return { message: 'The last reminder for this event has passed.' };
       const schedule = { area, zone, event };
       const armed: ArmedAlerts = { id: crypto.randomUUID(), schedule, subscription, pending };
       await storage.put(key, armed);
-      await storage.setAlarm(first);
+      await storage.setAlarm(pending[0] ?? event.at);
 
       return { schedule };
     });
@@ -240,12 +232,22 @@ export class EventAlerts extends DurableObject<Env> {
 
       const now = Date.now();
       const { event } = armed.schedule;
+      const eventAlertExpires = event.at + MINUTE_MS;
 
-      if (now >= event.at) {
+      if (now >= eventAlertExpires || armed.pending === null) {
         await storage.delete(key);
         await storage.deleteAlarm();
 
         return null;
+      }
+
+      if (now >= event.at) {
+        // Claim the final alert once and retain the ID for the cancellation check.
+        armed.pending = null;
+        await storage.put(key, armed);
+        await storage.setAlarm(eventAlertExpires);
+
+        return { armed, due: event.at };
       }
 
       const due = armed.pending.filter(at => at <= now).at(-1);
@@ -258,32 +260,24 @@ export class EventAlerts extends DurableObject<Env> {
 
     if (!delivery) return;
     const { armed, due } = delivery;
-    const { area, zone, event } = armed.schedule;
-    const expires = Math.min(due + MINUTE_MS, event.at);
+    const expires = due + MINUTE_MS;
     const ttl = Math.floor((expires - Date.now()) / 1000);
 
     if (ttl <= 0) return;
-    const action = event.kind === 'opening' ? 'open' : 'close';
-    const title = `Shooting hours ${action} in ${(event.at - due) / MINUTE_MS} min`;
-    const body = `${eventTime.format(event.at)} CT · ${AREAS[area]} Zone ${zone}`;
-    const tag = `field-hours-${due}`;
+    const notification = alertNotification(armed.schedule, due);
 
     try {
-      const details = generateRequestDetails(
-        armed.subscription,
-        JSON.stringify({ title, body, tag }),
-        {
-          TTL: ttl,
-          contentEncoding: 'aes128gcm',
-          topic: tag,
-          urgency: 'high',
-          vapidDetails: {
-            subject: this.env.VAPID_SUBJECT,
-            publicKey: this.env.VAPID_PUBLIC_KEY,
-            privateKey: this.env.VAPID_PRIVATE_KEY,
-          },
+      const details = generateRequestDetails(armed.subscription, JSON.stringify(notification), {
+        TTL: ttl,
+        contentEncoding: 'aes128gcm',
+        topic: notification.tag,
+        urgency: 'high',
+        vapidDetails: {
+          subject: this.env.VAPID_SUBJECT,
+          publicKey: this.env.VAPID_PUBLIC_KEY,
+          privateKey: this.env.VAPID_PRIVATE_KEY,
         },
-      );
+      });
 
       const current = await this.ctx.storage.get<ArmedAlerts>(key);
       const remaining = Math.floor((expires - Date.now()) / 1000);
@@ -314,7 +308,7 @@ export class EventAlerts extends DurableObject<Env> {
         console.warn('Push delivery rejected.', response.status);
       }
     } catch {
-      // The next reminder is already scheduled. Avoid retrying an uncertain delivery.
+      // Avoid retrying an uncertain delivery.
       console.warn('Push delivery failed.');
     }
   }

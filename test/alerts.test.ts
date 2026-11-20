@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import { nextShootingEvent, reminderTimes } from '../src/alerts';
+import { LocalNotificationTest } from '../worker/local-notification-test';
 
 const location = { area: 'north', zone: 'A' } as const;
 
@@ -40,4 +41,38 @@ test('keeps only future reminders for the same next event', () => {
   assert.deepEqual(reminderTimes(event, opens - 1000), []);
   assert.deepEqual(nextShootingEvent(location, new Date(opens - 1000)), event);
   assert.equal(nextShootingEvent(location, new Date(opens))?.kind, 'closing');
+});
+
+test('an app without event title support gets a reload error before an event test is queued', async () => {
+  const localTest = new LocalNotificationTest();
+  const device = crypto.randomUUID();
+  const origin = 'http://127.0.0.1:4173';
+  const url = origin + '/api/alerts/test';
+  const token = 'test-token';
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+
+  const poll = await localTest.fetch(
+    new Request(url, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ device, origin, reply: '' }),
+    }),
+    token,
+  );
+
+  assert.equal(poll.status, 200);
+
+  const eventTest = await localTest.fetch(
+    new Request(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ device, event: 'opening' }),
+    }),
+    token,
+  );
+
+  assert.equal(eventTest.status, 409);
+  assert.deepEqual(await eventTest.json(), {
+    message: 'Reopen Field Hours to load the updated app, then try the event test again.',
+  });
 });
