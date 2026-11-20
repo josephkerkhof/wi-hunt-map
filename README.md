@@ -2,6 +2,8 @@
 
 Field Hours shows today’s Wisconsin DNR deer shooting hours for the selected area and longitude zone. The map and hours work in the browser. **Use my location** requests a fix and marks it with a blue dot and accuracy ring, including when you need to confirm the zone manually. The app saves the selected area and zone on the device. Coordinates stay in memory during the session.
 
+To help someone install Field Hours, send them [deer.kerkhof.dev/?install](https://deer.kerkhof.dev/?install). The link opens install steps for their device. On a computer, the steps show a QR code for the phone.
+
 ## Run locally
 
 Devenv provides Node.js 26, npm, and Wrangler. Start the development server, production preview, and local alert Worker together.

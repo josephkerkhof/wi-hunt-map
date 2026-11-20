@@ -21,16 +21,29 @@
     <header class="site-header">
       <div class="install-banner" id="install-banner" hidden>
         <div class="shell install-banner-inner">
-          <p>Use Field Hours offline.</p>
-          <button class="button button-primary" id="install" type="button">
+          <p><strong>Works with no signal.</strong> Add Field Hours to your Home Screen.</p>
+          <button class="button button-primary" id="install" type="button" data-install>
             <span class="download-icon" aria-hidden="true"></span>
-            Install app
+            <span id="install-label">Show me how</span>
           </button>
           <button
             class="close-button"
             id="dismiss-install"
             type="button"
-            aria-label="Dismiss install banner"
+            aria-label="Hide install reminder for 2 weeks"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+      <div class="install-banner" id="welcome-banner" hidden>
+        <div class="shell install-banner-inner">
+          <p id="welcome-message"></p>
+          <button
+            class="close-button"
+            id="dismiss-welcome"
+            type="button"
+            aria-label="Dismiss welcome message"
           >
             ×
           </button>
@@ -41,6 +54,16 @@
           <img src="./assets/mark.png" width="36" height="36" alt="" />
           <span>Field Hours</span>
         </a>
+        <button
+          class="button button-outline header-install"
+          id="header-install"
+          type="button"
+          data-install
+          hidden
+        >
+          <span class="download-icon" aria-hidden="true"></span>
+          <span id="header-install-label">Install app</span>
+        </button>
       </div>
     </header>
 
@@ -233,6 +256,9 @@
         <button type="button" class="button button-primary" id="retry-alerts" hidden>
           Try again
         </button>
+        <button type="button" class="button button-primary" id="alert-install" data-install hidden>
+          Show me how
+        </button>
       </div>
     </dialog>
 
@@ -292,14 +318,196 @@
           ×
         </button>
       </div>
-      <h3>iPhone and iPad</h3>
-      <p>In Safari, tap Share, then Add to Home Screen. Turn on Open as Web App if offered.</p>
-      <h3>Android</h3>
-      <p>In Chrome, open the menu and choose Install app or Add to Home screen.</p>
-      <p>
-        Open the installed app while online and set your hunt location. Before heading out, try
-        reopening it in airplane mode.
+      <p class="section-description">
+        Field Hours then opens from your Home Screen and works with no signal.
       </p>
+
+      <section class="install-steps" id="install-ios-safari" aria-label="Safari steps" hidden>
+        <ol class="process-list">
+          <li id="safari-menu-step">
+            Tap
+            <span class="ui-key"
+              ><svg aria-hidden="true" focusable="false"><use href="#icon-more" /></svg>More</span
+            >
+            next to the address bar. Then tap
+            <span class="ui-key"
+              ><svg aria-hidden="true" focusable="false"><use href="#icon-share" /></svg>Share</span
+            >
+            <p class="hint">If Share is already on the toolbar, tap it.</p>
+          </li>
+          <li id="safari-share-step">
+            Tap
+            <span class="ui-key"
+              ><svg aria-hidden="true" focusable="false"><use href="#icon-share" /></svg>Share</span
+            >
+            on the toolbar.
+          </li>
+          <li>
+            Scroll down and tap
+            <span class="ui-key"
+              ><svg aria-hidden="true" focusable="false"><use href="#icon-add" /></svg>Add to Home
+              Screen</span
+            >
+          </li>
+          <li>
+            Tap <strong>Add</strong>. If you see <strong>Open as Web App</strong>, keep it on.
+          </li>
+          <li>
+            Open
+            <img class="app-icon" src="./assets/icon-192.png" width="20" height="20" alt="" />
+            <strong>Field Hours</strong> from your Home Screen.
+          </li>
+        </ol>
+        <p class="hint">Don’t see Add to Home Screen? Open this page in the Safari app first.</p>
+      </section>
+
+      <section class="install-steps" id="install-ios-browser" aria-label="Browser steps" hidden>
+        <ol class="process-list">
+          <li>
+            Tap
+            <span class="ui-key"
+              ><svg aria-hidden="true" focusable="false"><use href="#icon-share" /></svg>Share</span
+            >. In some browsers, Share is in the
+            <span class="ui-key"
+              ><svg aria-hidden="true" focusable="false"><use href="#icon-more" /></svg>Menu</span
+            >
+          </li>
+          <li>
+            Scroll down and tap
+            <span class="ui-key"
+              ><svg aria-hidden="true" focusable="false"><use href="#icon-add" /></svg>Add to Home
+              Screen</span
+            >
+          </li>
+          <li>Tap <strong>Add</strong>.</li>
+          <li>
+            Open
+            <img class="app-icon" src="./assets/icon-192.png" width="20" height="20" alt="" />
+            <strong>Field Hours</strong> from your Home Screen.
+          </li>
+        </ol>
+      </section>
+
+      <section class="install-steps" id="install-in-app" aria-label="Open in browser" hidden>
+        <p>
+          This page is open inside another app. Open it in
+          <span data-browser-name>Safari</span> to add it to your Home Screen.
+        </p>
+        <ol class="process-list">
+          <li>
+            Tap the
+            <span class="ui-key"
+              ><svg aria-hidden="true" focusable="false"><use href="#icon-more" /></svg>Menu</span
+            >
+            at the top or bottom of the screen.
+          </li>
+          <li>
+            Tap <strong>Open in <span data-browser-name>Safari</span></strong> or
+            <strong>Open in browser</strong>.
+          </li>
+          <li><span data-browser-name>Safari</span> opens with the next steps.</li>
+        </ol>
+      </section>
+
+      <section class="install-steps" id="install-android" aria-label="Android steps" hidden>
+        <ol class="process-list">
+          <li>
+            Tap the browser
+            <span class="ui-key"
+              ><svg aria-hidden="true" focusable="false"><use href="#icon-menu" /></svg>Menu</span
+            >
+          </li>
+          <li>Tap <strong>Add to Home screen</strong> or <strong>Install app</strong>.</li>
+          <li>Tap <strong>Install</strong> or <strong>Add</strong>.</li>
+          <li>
+            Open
+            <img class="app-icon" src="./assets/icon-192.png" width="20" height="20" alt="" />
+            <strong>Field Hours</strong> from your Home screen.
+          </li>
+        </ol>
+      </section>
+
+      <section class="install-steps" id="install-desktop" aria-label="Phone setup" hidden>
+        <p>
+          Scan this code with your phone’s camera to open Field Hours. Then follow the steps on your
+          phone.
+        </p>
+        <div class="install-qr" id="install-qr">
+          <svg
+            role="img"
+            aria-label="QR code that opens Field Hours"
+            viewBox="0 0 1 1"
+            shape-rendering="crispEdges"
+          >
+            <path />
+          </svg>
+        </div>
+        <p>Or go to <strong data-app-url></strong> on your phone.</p>
+      </section>
+
+      <div class="install-copy" id="install-copy-block" hidden>
+        <p>
+          Can’t find these buttons? Copy the link and paste it in
+          <span data-browser-name>Safari</span>.
+        </p>
+        <button type="button" class="button button-outline" id="install-copy">Copy link</button>
+        <p class="hint" id="install-copy-status" role="status"></p>
+      </div>
+
+      <details class="install-other">
+        <summary>Steps for other devices</summary>
+        <p>
+          <strong>iPhone or iPad:</strong> In Safari, tap Share, then Add to Home Screen. On iOS 26
+          and later, tap More (•••) first.
+        </p>
+        <p><strong>Android:</strong> In Chrome, open the menu (⋮), then tap Add to Home screen.</p>
+        <p><strong>Computer:</strong> Open <span data-app-url></span> on your phone.</p>
+      </details>
+
+      <div class="dialog-actions">
+        <button type="button" class="button button-primary" id="install-done">I added it</button>
+      </div>
     </dialog>
+
+    <svg class="icon-sprite" aria-hidden="true" hidden>
+      <symbol id="icon-share" viewBox="0 0 24 24">
+        <path
+          d="M12 15V3M8 7l4-4 4 4M8 10H6.5A1.5 1.5 0 0 0 5 11.5v8A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5v-8a1.5 1.5 0 0 0-1.5-1.5H16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </symbol>
+      <symbol id="icon-more" viewBox="0 0 24 24">
+        <circle cx="5" cy="12" r="2" />
+        <circle cx="12" cy="12" r="2" />
+        <circle cx="19" cy="12" r="2" />
+      </symbol>
+      <symbol id="icon-menu" viewBox="0 0 24 24">
+        <circle cx="12" cy="5" r="2" />
+        <circle cx="12" cy="12" r="2" />
+        <circle cx="12" cy="19" r="2" />
+      </symbol>
+      <symbol id="icon-add" viewBox="0 0 24 24">
+        <rect
+          x="4"
+          y="4"
+          width="16"
+          height="16"
+          rx="3.5"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        />
+        <path
+          d="M12 8.5v7M8.5 12h7"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+        />
+      </symbol>
+    </svg>
   </body>
 </html>

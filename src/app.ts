@@ -17,25 +17,11 @@ import {
   type LocationChoice,
   type LocationError,
 } from './hours';
+import { setupInstallGuide } from './install-guide';
 import { setupLocalNotificationTest } from './local-notification-test';
 import { isOnMap, setupZoneMap, type DeviceLocation } from './zone-map';
 
 type Selection = LocationChoice & { point?: Point };
-
-interface BeforeInstallPromptEvent extends Event {
-  prompt(): Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
-}
-
-declare global {
-  interface Navigator {
-    getInstalledRelatedApps?(): Promise<{ platform: string }[]>;
-    readonly standalone?: boolean;
-  }
-
-  interface WindowEventMap {
-    beforeinstallprompt: BeforeInstallPromptEvent;
-  }
-}
 
 const todayDate = $('today-date', HTMLTimeElement);
 const sheetToggle = $('sheet-toggle', HTMLButtonElement);
@@ -417,86 +403,7 @@ setInterval(() => {
   if (!document.hidden) updateToday();
 }, 1000);
 
-async function setupInstallBanner() {
-  const isPhone = /\biPhone\b|\bAndroid\b.*\bMobile\b/.test(navigator.userAgent);
-
-  const isStandalone =
-    window.matchMedia('(display-mode: standalone)').matches ||
-    ('standalone' in navigator && navigator.standalone === true);
-
-  if (!isPhone || isStandalone) return;
-
-  let installPrompt: BeforeInstallPromptEvent | null = null;
-
-  window.addEventListener('beforeinstallprompt', event => {
-    event.preventDefault();
-    installPrompt = event;
-  });
-
-  const dismissalKey = 'field-hours.install-dismissed';
-
-  try {
-    if (localStorage.getItem(dismissalKey) === 'true') return;
-  } catch {
-    // The banner still works when storage is unavailable.
-  }
-
-  const banner = $('install-banner');
-  const installDialog = $('install-dialog', HTMLDialogElement);
-  let closed = false;
-
-  function hideBanner() {
-    closed = true;
-    installPrompt = null;
-    const hadFocus = banner.contains(document.activeElement);
-    banner.hidden = true;
-
-    if (hadFocus) $('main').focus({ preventScroll: true });
-  }
-
-  window.addEventListener('appinstalled', hideBanner);
-
-  $('dismiss-install').addEventListener('click', () => {
-    hideBanner();
-
-    try {
-      localStorage.setItem(dismissalKey, 'true');
-    } catch {
-      // The banner stays dismissed on this page.
-    }
-  });
-
-  $('install').addEventListener('click', async () => {
-    if (!installPrompt) {
-      installDialog.showModal();
-
-      return;
-    }
-
-    const prompt = installPrompt;
-    installPrompt = null;
-
-    try {
-      const { outcome } = await prompt.prompt();
-
-      if (outcome === 'accepted') hideBanner();
-    } catch {
-      if (!closed) installDialog.showModal();
-    }
-  });
-
-  try {
-    const apps = await navigator.getInstalledRelatedApps?.();
-
-    if (apps?.some(app => app.platform === 'webapp')) return;
-  } catch {
-    // Installation instructions are still available when the browser cannot check.
-  }
-
-  if (!closed) banner.hidden = false;
-}
-
-void setupInstallBanner();
+void setupInstallGuide(selection !== null);
 
 const firstDay = coverageFormat.format(new Date(`${FIRST_DATE}T00:00:00Z`));
 const lastDay = coverageFormat.format(new Date(`${LAST_DATE}T00:00:00Z`));

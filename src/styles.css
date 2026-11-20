@@ -183,7 +183,14 @@ h3 {
 .header-inner {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
   padding-block: var(--space-1);
+}
+
+.header-install {
+  padding-inline: var(--space-105);
+  font-size: 0.9375rem;
 }
 
 .brand {
@@ -753,9 +760,7 @@ dialog::backdrop {
   background: var(--primary-light);
 }
 
-.form-field,
-#install-dialog h3,
-#install-dialog p:last-child {
+.form-field {
   margin-block-start: var(--space-2);
 }
 
@@ -765,8 +770,120 @@ dialog::backdrop {
   margin-block-start: var(--space-1);
 }
 
-#install-dialog p {
+.install-steps > p,
+.install-copy,
+.install-other {
+  margin-block-start: var(--space-2);
+}
+
+/* USWDS Process list pattern for numbered install steps. */
+.process-list {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.process-list > li {
+  position: relative;
+  padding-block-end: var(--space-3);
+  padding-inline-start: 2.75rem;
+  line-height: 1.75;
+  counter-increment: step;
+}
+
+.process-list > li:last-child {
+  padding-block-end: 0;
+}
+
+.process-list > li::before {
+  content: counter(step);
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0.1875rem solid var(--navy);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--navy);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.process-list > li:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  inset-block: 2rem 0;
+  inset-inline-start: calc(1rem - 0.125rem);
+  border-inline-start: 0.25rem solid var(--line);
+}
+
+.process-list .hint {
   margin-block-start: var(--space-05);
+  line-height: 1.5;
+}
+
+/* Matches the look of the browser button the step names. */
+.ui-key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-05);
+  padding: 0 var(--space-1) 0 var(--space-05);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--canvas);
+  color: var(--ink);
+  font-weight: 700;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.ui-key svg {
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  fill: currentColor;
+}
+
+.app-icon {
+  vertical-align: middle;
+  border-radius: 0.3125rem;
+}
+
+.install-qr svg {
+  display: block;
+  width: 11rem;
+  height: 11rem;
+  margin: var(--space-2) auto 0;
+  background: var(--surface);
+  fill: var(--ink);
+}
+
+.install-copy {
+  padding-block-start: var(--space-2);
+  border-block-start: 1px solid var(--line);
+}
+
+.install-copy .button {
+  margin-block-start: var(--space-1);
+}
+
+.install-other {
+  font-size: 0.9375rem;
+}
+
+.install-other summary {
+  padding-block: var(--space-1);
+  color: var(--primary);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.install-other p {
+  margin-block-start: var(--space-1);
 }
 
 @media (min-height: 38rem) {

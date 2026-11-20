@@ -8,6 +8,7 @@ import {
 } from './alerts';
 import { $ } from './elements';
 import { AREAS, type LocationChoice } from './hours';
+import { isStandalone } from './install-platform';
 
 const storageKey = 'field-hours.alerts';
 const api = new URL('api/alerts', document.baseURI);
@@ -121,13 +122,12 @@ async function requestSchedule(
   return data.schedule;
 }
 
+// iPhone and iPad allow Web Push only in Home Screen apps.
+const needsHomeScreen =
+  (/iPhone|iPad|iPod/.test(navigator.userAgent) || 'standalone' in navigator) && !isStandalone();
+
 function supportMessage() {
-  const appleMobile = /iPhone|iPad|iPod/.test(navigator.userAgent) || 'standalone' in navigator;
-
-  const standalone =
-    matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-
-  if (appleMobile && !standalone) {
+  if (needsHomeScreen) {
     return 'Add Field Hours to your Home Screen and open it there to enable alerts.';
   }
 
@@ -164,6 +164,7 @@ export function setupAlertControls(onArmedChange: (armed: boolean) => void) {
   const retry = $('retry-alerts', HTMLButtonElement);
   const actions = [enable, disable, retry];
   const unsupported = supportMessage();
+  $('alert-install').hidden = !needsHomeScreen;
   let busy: 'enable' | 'disable' | null = null;
   let refreshing = false;
   let refreshFailed = false;
