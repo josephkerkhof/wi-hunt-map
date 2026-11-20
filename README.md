@@ -41,7 +41,7 @@ The anti-slop plugin is vendored with its license and upstream revision. [Vendor
 
 The [CI/CD workflow](.github/workflows/ci-cd.yml) runs `npm run check` and `npm run build` on pull requests to `main` and pushes to `main`. After both commands pass on `main`, GitHub Actions uploads the built site to the `wi-hunt-map` Pages project. The production site uses [deer.kerkhof.dev](https://deer.kerkhof.dev/).
 
-Set `CLOUDFLARE_ACCOUNT_ID` as a GitHub Actions repository variable and `CLOUDFLARE_API_TOKEN` as a repository secret. The token needs **Account → Cloudflare Pages → Edit** for the account that owns the Pages project. [Cloudflare Pages deployment credentials](https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/#get-credentials-from-cloudflare)
+Set `CLOUDFLARE_ACCOUNT_ID` as a GitHub Actions repository variable and `CLOUDFLARE_API_TOKEN` as a repository secret. The token needs **Pages Write** on the account that owns the Pages project. [Cloudflare Pages deployment credentials](https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/#get-credentials-from-cloudflare)
 
 To deploy manually from `main`, run these commands in the devenv shell with an authenticated Wrangler session.
 
@@ -55,14 +55,23 @@ wrangler pages deploy dist --project-name=wi-hunt-map --branch=main
 
 The Worker handles `/api/alerts` on the production hostname. A Durable Object stores each device’s next event and wakes at its reminder times and at the event itself. The Worker and app use the same bundled hours.
 
-1. Generate a dedicated production VAPID key pair with `npm exec -- web-push generate-vapid-keys --json`. Store `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` in a private `.env` file outside this repository. Keep the key pair for future deployments so browser subscriptions continue to work.
+1. Generate a dedicated production VAPID key pair with `npm exec -- web-push generate-vapid-keys --json`. Store them as `VAPID_PUBLIC_KEY=…` and `VAPID_PRIVATE_KEY=…` lines in a private `.env` file outside this repository. Keep the key pair for future deployments so browser subscriptions continue to work.
 2. Upload the Worker and its secrets from an authenticated Wrangler session.
 
    ```sh
    wrangler deploy --config worker/wrangler.jsonc --secrets-file /path/to/production-alerts.env
    ```
 
-3. Set the Actions repository variable `CLOUDFLARE_ALERTS_ENABLED` to `true` to deploy the Worker with future Pages releases. Give `CLOUDFLARE_API_TOKEN` **Account → Workers Scripts → Edit** and **Zone → Workers Routes → Edit** for `kerkhof.dev`. [Cloudflare Workers permissions](https://developers.cloudflare.com/workers/authorization/workers/)
+   If the first deploy uploads the Worker but then reports that it doesn’t exist, run the same command again. Cloudflare can take a moment to register a new Worker before Wrangler attaches its route.
+
+3. Add these permission policies to `CLOUDFLARE_API_TOKEN`, then set the Actions repository variable `CLOUDFLARE_ALERTS_ENABLED` to `true`. The workflow then deploys the Worker before each Pages release and skips the site if the Worker fails.
+
+   | Resources          | Permissions                        |
+   | ------------------ | ---------------------------------- |
+   | Entire account     | Pages Write, Workers Scripts Write |
+   | `kerkhof.dev` zone | Workers Routes Write               |
+
+   Workers Scripts Write must cover the account, not the zone, because Wrangler uploads scripts, secrets, and Durable Object migrations through account endpoints. Apps Write is a deprecated permission and doesn’t grant route access. [Cloudflare API token permissions](https://developers.cloudflare.com/fundamentals/api/reference/permissions/)
 
 For manual releases after setup, run `wrangler deploy --config worker/wrangler.jsonc` before deploying Pages.
 
