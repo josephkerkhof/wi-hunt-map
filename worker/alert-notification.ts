@@ -7,6 +7,9 @@ const eventTime = new Intl.DateTimeFormat('en-US', {
   minute: '2-digit',
 });
 
+/** The tag is also the push Topic, so a retried alert replaces the first copy. */
+export const alertTag = (due: number) => `field-hours-${due}`;
+
 export function alertNotification(schedule: AlertSchedule, due: number) {
   const { area, zone, event } = schedule;
   const opening = event.kind === 'opening';
@@ -20,6 +23,6 @@ export function alertNotification(schedule: AlertSchedule, due: number) {
   return {
     title,
     body: `${eventTime.format(event.at)} CT · ${AREAS[area]} Zone ${zone}`,
-    tag: `field-hours-${due}`,
+    tag: alertTag(due),
   };
 }

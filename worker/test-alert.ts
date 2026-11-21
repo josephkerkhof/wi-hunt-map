@@ -1,16 +1,18 @@
 import type { PushSubscription } from 'web-push';
 import { MINUTE_MS } from '../src/alerts';
+import { alertTag } from './alert-notification';
 import { RETRY_MS, type PushOutcome } from './alert-queue';
 import type { PushMessage } from './push-request';
 
 /** The delay lets the user lock the phone or leave the app before the test arrives. */
 export const TEST_DELAY_MS = 2 * MINUTE_MS;
 
-export const testMessage: PushMessage = {
+/** Uses the tag and topic format of a real alert, so the test sends the same kind of request. */
+export const testMessage = (at: number): PushMessage => ({
   title: 'Field Hours test alert',
   body: 'Shooting hours alerts can reach this device.',
-  tag: 'field-hours-test',
-};
+  tag: alertTag(at),
+});
 
 export interface PendingTest {
   at: number;

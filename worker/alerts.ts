@@ -358,7 +358,9 @@ export class TestAlerts extends DurableObject<Env> {
     const ttl = Math.floor((pending.at + MINUTE_MS - Date.now()) / 1000);
 
     const outcome =
-      ttl > 0 ? await deliverPush(this.env, pending.subscription, testMessage, ttl) : null;
+      ttl > 0
+        ? await deliverPush(this.env, pending.subscription, testMessage(pending.at), ttl)
+        : null;
 
     if (outcome === 'delivered') console.log('Test alert delivered.');
     else console.warn('Test alert not delivered.', outcome ?? 'expired');

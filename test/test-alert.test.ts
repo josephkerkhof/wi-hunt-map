@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import type { PushSubscription } from 'web-push';
 import { test } from 'vitest';
+import { nextShootingEvent } from '../src/alerts';
+import { alertNotification } from '../worker/alert-notification';
 import { RETRY_MS } from '../worker/alert-queue';
-import { TEST_DELAY_MS, retryTestAt, scheduleTest } from '../worker/test-alert';
+import { TEST_DELAY_MS, retryTestAt, scheduleTest, testMessage } from '../worker/test-alert';
 
 const subscription: PushSubscription = {
   endpoint: 'https://web.push.apple.com/example',
@@ -18,6 +20,15 @@ test('a test alert is due two minutes later, and another press keeps the first t
 
   assert.equal(scheduleTest(first, subscription, now + 30_000).at, first.at);
   assert.equal(scheduleTest(first, subscription, first.at + 1).at, first.at + 1 + TEST_DELAY_MS);
+});
+
+test('a test alert uses the same tag and topic format as a real alert', () => {
+  const location = { area: 'south', zone: 'B' } as const;
+  const event = nextShootingEvent(location, new Date(now));
+  assert.ok(event);
+  const at = scheduleTest(undefined, subscription, now).at;
+
+  assert.equal(testMessage(at).tag, alertNotification({ ...location, event }, at).tag);
 });
 
 test('a test alert that fails to send is retried for one minute, and a refusal is final', () => {
