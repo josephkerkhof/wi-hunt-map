@@ -155,16 +155,18 @@ test('a failed push is retried until it is delivered or expires', () => {
   assert.equal(failing.state, null);
 });
 
-test('a rejected push moves on to the next alert and an expired subscription clears', () => {
+test('a rejected or failed push moves on to the next alert and an expired subscription clears', () => {
   const now = Date.parse('2026-11-20T03:00:00Z');
   const armed = armAlerts(null, scheduleAt(now), subscription, now);
   const tenMinutes = opens - 10 * 60_000;
 
-  const rejected = run(armed, tenMinutes, time => (time === tenMinutes ? 'rejected' : 'delivered'));
-  assert.deepEqual(
-    rejected.sent.map(({ at }) => minutesBefore(at)),
-    [5, 3, 1, 0],
-  );
+  for (const outcome of ['rejected', 'failed'] as const) {
+    const skipped = run(armed, tenMinutes, time => (time === tenMinutes ? outcome : 'delivered'));
+    assert.deepEqual(
+      skipped.sent.map(({ at }) => minutesBefore(at)),
+      [5, 3, 1, 0],
+    );
+  }
 
   const gone = run(armed, tenMinutes, () => 'gone');
   assert.deepEqual(gone.sent, []);

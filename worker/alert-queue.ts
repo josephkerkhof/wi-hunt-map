@@ -15,7 +15,8 @@ export interface ArmedAlerts {
   queue: Delivery[];
 }
 
-export type PushOutcome = 'delivered' | 'gone' | 'retry' | 'rejected';
+/** `failed` means the request could not be built, so a retry would fail the same way. */
+export type PushOutcome = 'delivered' | 'gone' | 'retry' | 'rejected' | 'failed';
 
 export interface AlarmPlan {
   /** The record to store, or null to clear the device. */

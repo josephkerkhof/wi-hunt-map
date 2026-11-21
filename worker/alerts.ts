@@ -8,7 +8,6 @@ import {
   completeDelivery,
   deliveryExpires,
   planAlarm,
-  pushOutcome,
   readArmed,
   sameDelivery,
   type ArmedAlerts,
@@ -17,6 +16,7 @@ import {
   type StoredAlerts,
 } from './alert-queue';
 import { LocalNotificationTest } from './local-notification-test';
+import { pushRequest, sendPush } from './push-request';
 
 interface Env {
   ALERTS: DurableObjectNamespace<EventAlerts>;
@@ -271,6 +271,7 @@ export class EventAlerts extends DurableObject<Env> {
     if (outcome === 'delivered') console.log('Alert delivered.', describe(send));
     else if (outcome === 'retry') console.warn('Alert delivery will be retried.', describe(send));
     else if (outcome === 'gone') console.warn('Push subscription expired.', describe(send));
+    else if (outcome === 'failed') console.error('Alert could not be sent.', describe(send));
     else console.error('Push service rejected the alert.', describe(send));
 
     await this.ctx.storage.transaction(async storage => {
@@ -286,48 +287,32 @@ export class EventAlerts extends DurableObject<Env> {
     subscription: PushSubscription,
     delivery: Delivery,
   ): Promise<PushOutcome | null> {
-    const notification = alertNotification(delivery.schedule, delivery.due);
-    const expires = deliveryExpires(delivery);
+    const current = readArmed(await this.ctx.storage.get<StoredAlerts>(key));
+    const ttl = Math.floor((deliveryExpires(delivery) - Date.now()) / 1000);
 
-    try {
-      const current = readArmed(await this.ctx.storage.get<StoredAlerts>(key));
-      const ttl = Math.floor((expires - Date.now()) / 1000);
+    // Turning alerts off removes queued deliveries, including one being retried.
+    if (!current?.queue.some(queued => sameDelivery(queued, delivery)) || ttl <= 0) return null;
 
-      // Turning alerts off removes queued deliveries, including one being retried.
-      if (!current?.queue.some(queued => sameDelivery(queued, delivery)) || ttl <= 0) return null;
+    return sendPush(
+      () => {
+        const notification = alertNotification(delivery.schedule, delivery.due);
 
-      const details = generateRequestDetails(subscription, JSON.stringify(notification), {
-        TTL: ttl,
-        contentEncoding: 'aes128gcm',
-        topic: notification.tag,
-        urgency: 'high',
-        vapidDetails: {
-          subject: this.env.VAPID_SUBJECT,
-          publicKey: this.env.VAPID_PUBLIC_KEY,
-          privateKey: this.env.VAPID_PRIVATE_KEY,
-        },
-      });
+        const details = generateRequestDetails(subscription, JSON.stringify(notification), {
+          TTL: ttl,
+          contentEncoding: 'aes128gcm',
+          topic: notification.tag,
+          urgency: 'high',
+          vapidDetails: {
+            subject: this.env.VAPID_SUBJECT,
+            publicKey: this.env.VAPID_PUBLIC_KEY,
+            privateKey: this.env.VAPID_PRIVATE_KEY,
+          },
+        });
 
-      const response = await fetch(details.endpoint, {
-        method: details.method,
-        headers: new Headers(details.headers),
-        body: details.body ? new Uint8Array(details.body) : null,
-        redirect: 'error',
-        signal: AbortSignal.timeout(pushTimeoutMs),
-      });
-
-      await response.body?.cancel();
-      const outcome = pushOutcome(response.status);
-
-      if (outcome !== 'delivered') console.warn('Push service status.', response.status);
-
-      return outcome;
-    } catch (error) {
-      // A retry reuses the notification tag and topic, so a duplicate replaces the first.
-      console.warn('Push request failed.', error instanceof Error ? error.name : 'Error');
-
-      return 'retry';
-    }
+        return pushRequest(details);
+      },
+      request => fetch(request, { signal: AbortSignal.timeout(pushTimeoutMs) }),
+    );
   }
 }
 
