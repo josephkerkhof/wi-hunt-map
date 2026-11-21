@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { generateRequestDetails, type PushSubscription, type RequestDetails } from 'web-push';
 import { pushOutcome, type PushOutcome } from './alert-queue';
 
@@ -15,6 +16,11 @@ export interface PushMessage {
 }
 
 const pushTimeoutMs = 10_000;
+
+/** Apple refuses a Topic that does not decode as base64url. 32 characters decode to 24 bytes. */
+export function pushTopic(tag: string) {
+  return createHash('sha256').update(tag).digest('base64url').slice(0, 32);
+}
 
 /** Workers fetch rejects redirect 'error', so a redirect returns as a response and counts as rejected. */
 export function pushRequest(details: RequestDetails) {
@@ -96,7 +102,7 @@ export function deliverPush(
         generateRequestDetails(subscription, JSON.stringify(message), {
           TTL: ttl,
           contentEncoding: 'aes128gcm',
-          topic: message.tag,
+          topic: pushTopic(message.tag),
           urgency: 'high',
           vapidDetails: {
             subject: env.VAPID_SUBJECT,

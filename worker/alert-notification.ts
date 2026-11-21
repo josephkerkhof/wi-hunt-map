@@ -7,7 +7,7 @@ const eventTime = new Intl.DateTimeFormat('en-US', {
   minute: '2-digit',
 });
 
-/** The tag is also the push Topic, so a retried alert replaces the first copy. */
+/** The push Topic comes from the tag, so a retried alert replaces the first copy. */
 export const alertTag = (due: number) => `field-hours-${due}`;
 
 export function alertNotification(schedule: AlertSchedule, due: number) {

@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
+import { createECDH, randomBytes } from 'node:crypto';
+import { generateVAPIDKeys } from 'web-push';
 import { afterEach, test, vi } from 'vitest';
-import { pushRequest, sendPush } from '../worker/push-request';
+import { alertTag } from '../worker/alert-notification';
+import { deliverPush, pushRequest, pushTopic, sendPush } from '../worker/push-request';
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 const samplePush = () =>
@@ -69,6 +73,52 @@ test('a sent push returns the push service outcome', async () => {
   assert.equal(await sendPush(samplePush, reply(201)), 'delivered');
   assert.equal(await sendPush(samplePush, reply(410)), 'gone');
   assert.equal(await sendPush(samplePush, reply(302)), 'rejected');
+});
+
+/** Apple refuses a Topic that does not decode as base64url, such as one with 25 characters. */
+const decodes = (topic: string) => Buffer.from(topic, 'base64url').toString('base64url') === topic;
+
+test('a push sends a 32-character Topic that decodes as base64url', async () => {
+  const device = createECDH('prime256v1');
+  device.generateKeys();
+  const vapid = generateVAPIDKeys();
+  const topics: (string | null)[] = [];
+
+  vi.stubGlobal('fetch', (request: Request) => {
+    topics.push(request.headers.get('Topic'));
+
+    return reply(201)();
+  });
+
+  const outcome = await deliverPush(
+    {
+      VAPID_PUBLIC_KEY: vapid.publicKey,
+      VAPID_PRIVATE_KEY: vapid.privateKey,
+      VAPID_SUBJECT: 'https://deer.kerkhof.dev/',
+    },
+    {
+      endpoint: 'https://web.push.apple.com/example',
+      keys: {
+        p256dh: device.getPublicKey('base64url'),
+        auth: randomBytes(16).toString('base64url'),
+      },
+    },
+    { title: 'Shooting hours close in 10 min', body: 'Test', tag: alertTag(1795350840000) },
+    60,
+  );
+
+  assert.equal(outcome, 'delivered');
+  assert.equal(topics.length, 1);
+  const [topic] = topics;
+  assert.match(topic ?? '', /^[A-Za-z0-9_-]{32}$/);
+  assert.ok(topic && decodes(topic));
+});
+
+test('each alert keeps one Topic, so a retry replaces the first copy', () => {
+  const topic = pushTopic(alertTag(1795350840000));
+
+  assert.equal(pushTopic(alertTag(1795350840000)), topic);
+  assert.notEqual(pushTopic(alertTag(1795350900000)), topic);
 });
 
 test('a refused push logs the reason from the push service', async () => {
