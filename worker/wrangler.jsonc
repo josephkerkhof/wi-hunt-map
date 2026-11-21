@@ -7,9 +7,15 @@
   "preview_urls": false,
   "routes": [{ "pattern": "deer.kerkhof.dev/api/alerts*", "zone_name": "kerkhof.dev" }],
   "durable_objects": {
-    "bindings": [{ "name": "ALERTS", "class_name": "EventAlerts" }],
+    "bindings": [
+      { "name": "ALERTS", "class_name": "EventAlerts" },
+      { "name": "TEST_ALERTS", "class_name": "TestAlerts" },
+    ],
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["EventAlerts"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["EventAlerts"] },
+    { "tag": "v2", "new_sqlite_classes": ["TestAlerts"] },
+  ],
   // Limits per client IP. Mobile carriers can share an IP, so the read limit is generous.
   "ratelimits": [
     { "name": "ALERT_REQUESTS", "namespace_id": "1001", "simple": { "limit": 120, "period": 60 } },

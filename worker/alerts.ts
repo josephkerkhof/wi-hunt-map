@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { generateRequestDetails, type PushSubscription } from 'web-push';
+import type { PushSubscription } from 'web-push';
 import { MINUTE_MS, nextShootingEvent, subscriptionToken, type AlertSchedule } from '../src/alerts';
 import { isLocationChoice, type LocationChoice } from '../src/hours';
 import { alertNotification } from './alert-notification';
@@ -16,24 +16,26 @@ import {
   type StoredAlerts,
 } from './alert-queue';
 import { LocalNotificationTest } from './local-notification-test';
-import { pushRequest, sendPush } from './push-request';
+import { deliverPush, type VapidEnv } from './push-request';
+import { retryTestAt, scheduleTest, testMessage, type PendingTest } from './test-alert';
 
-interface Env {
+interface Env extends VapidEnv {
   ALERTS: DurableObjectNamespace<EventAlerts>;
+  TEST_ALERTS: DurableObjectNamespace<TestAlerts>;
   ALERT_REQUESTS: RateLimit;
   ALERT_CHANGES: RateLimit;
   LOCAL_ALERT_TEST_TOKEN?: string;
-  VAPID_PUBLIC_KEY: string;
-  VAPID_PRIVATE_KEY: string;
-  VAPID_SUBJECT: string;
 }
 
 type AlertRequest = LocationChoice & { eventAt: number; subscription: PushSubscription };
 
+type TestRequest = { subscription: PushSubscription };
+
 const key = 'armed';
+const testKey = 'test';
 const api = '/api/alerts';
+const testApi = api + '/test-alert';
 const maxBodyBytes = 8192;
-const pushTimeoutMs = 10_000;
 
 function isPushSubscription(value: unknown): value is PushSubscription {
   if (
@@ -82,7 +84,19 @@ function isAlertRequest(value: unknown): value is AlertRequest {
   );
 }
 
-async function readAlertRequest(request: Request): Promise<AlertRequest | null> {
+function isTestRequest(value: unknown): value is TestRequest {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'subscription' in value &&
+    isPushSubscription(value.subscription)
+  );
+}
+
+async function readJson<T>(
+  request: Request,
+  isValid: (value: unknown) => value is T,
+): Promise<T | null> {
   const reader = request.body?.getReader();
 
   if (!reader) return null;
@@ -108,13 +122,22 @@ async function readAlertRequest(request: Request): Promise<AlertRequest | null> 
 
     const data: unknown = JSON.parse(body + decoder.decode());
 
-    return isAlertRequest(data) ? data : null;
+    return isValid(data) ? data : null;
   } catch {
     return null;
   } finally {
     reader.releaseLock();
   }
 }
+
+/** Returns a copy of the subscription when the request token was derived from it. */
+async function ownSubscription({ endpoint, keys }: PushSubscription, token: string) {
+  if (token !== (await subscriptionToken(endpoint, keys.auth))) return null;
+
+  return { endpoint, keys: { auth: keys.auth, p256dh: keys.p256dh } };
+}
+
+const unusableSubscription = { message: 'This browser’s push subscription could not be used.' };
 
 function json<T>(body: T, status = 200) {
   return Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -129,7 +152,9 @@ export default {
       return env.ALERTS.getByName('local-notification-test').fetch(request);
     }
 
-    if (url.pathname !== api && url.pathname !== api + '/key') return json({}, 404);
+    const methods = { [api]: ['GET', 'PUT', 'DELETE'], [testApi]: ['POST'], [api + '/key']: [] };
+
+    if (!Object.hasOwn(methods, url.pathname)) return json({}, 404);
 
     if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) {
       return json({ message: 'Alerts are unavailable right now.' }, 503);
@@ -139,19 +164,29 @@ export default {
       return json({ publicKey: env.VAPID_PUBLIC_KEY, localTest });
     }
 
-    if (url.pathname !== api || !['GET', 'PUT', 'DELETE'].includes(request.method)) {
-      return json({}, 405);
-    }
+    if (!methods[url.pathname]?.includes(request.method)) return json({}, 405);
 
     // The token is derived from the browser's private subscription credentials.
     const token = /^Bearer ([a-f0-9]{64})$/.exec(request.headers.get('Authorization') ?? '')?.[1];
 
     if (!token) return json({}, 401);
     const client = request.headers.get('CF-Connecting-IP') ?? 'unknown';
-    const limiter = request.method === 'PUT' ? env.ALERT_CHANGES : env.ALERT_REQUESTS;
+    const changes = request.method === 'PUT' || request.method === 'POST';
+    const limiter = changes ? env.ALERT_CHANGES : env.ALERT_REQUESTS;
 
     if (!(await limiter.limit({ key: client })).success) {
       return json({ message: 'Too many alert requests. Wait a minute and try again.' }, 429);
+    }
+
+    if (request.method === 'POST') {
+      const data = await readJson(request, isTestRequest);
+
+      if (!data) return json(unusableSubscription, 400);
+      const subscription = await ownSubscription(data.subscription, token);
+
+      if (!subscription) return json({}, 403);
+
+      return json(await env.TEST_ALERTS.getByName(token).schedule(subscription));
     }
 
     const alerts = env.ALERTS.getByName(token);
@@ -164,18 +199,18 @@ export default {
       return json({ schedule: null });
     }
 
-    const data = await readAlertRequest(request);
+    const data = await readJson(request, isAlertRequest);
 
-    if (!data) return json({ message: 'This browser’s push subscription could not be used.' }, 400);
-    const { endpoint, keys } = data.subscription;
+    if (!data) return json(unusableSubscription, 400);
+    const subscription = await ownSubscription(data.subscription, token);
 
-    if (token !== (await subscriptionToken(endpoint, keys.auth))) return json({}, 403);
+    if (!subscription) return json({}, 403);
 
     const result = await alerts.arm({
       area: data.area,
       zone: data.zone,
       eventAt: data.eventAt,
-      subscription: { endpoint, keys: { auth: keys.auth, p256dh: keys.p256dh } },
+      subscription,
     });
 
     return json(result, 'message' in result ? 409 : 200);
@@ -293,26 +328,53 @@ export class EventAlerts extends DurableObject<Env> {
     // Turning alerts off removes queued deliveries, including one being retried.
     if (!current?.queue.some(queued => sameDelivery(queued, delivery)) || ttl <= 0) return null;
 
-    return sendPush(
-      () => {
-        const notification = alertNotification(delivery.schedule, delivery.due);
+    const notification = alertNotification(delivery.schedule, delivery.due);
 
-        const details = generateRequestDetails(subscription, JSON.stringify(notification), {
-          TTL: ttl,
-          contentEncoding: 'aes128gcm',
-          topic: notification.tag,
-          urgency: 'high',
-          vapidDetails: {
-            subject: this.env.VAPID_SUBJECT,
-            publicKey: this.env.VAPID_PUBLIC_KEY,
-            privateKey: this.env.VAPID_PRIVATE_KEY,
-          },
-        });
+    return deliverPush(this.env, subscription, notification, ttl);
+  }
+}
 
-        return pushRequest(details);
-      },
-      request => fetch(request, { signal: AbortSignal.timeout(pushTimeoutMs) }),
-    );
+/** Sends one test alert to a device after a short delay. Each device has its own object. */
+export class TestAlerts extends DurableObject<Env> {
+  schedule(subscription: PushSubscription) {
+    return this.ctx.storage.transaction(async storage => {
+      const pending = scheduleTest(
+        await storage.get<PendingTest>(testKey),
+        subscription,
+        Date.now(),
+      );
+
+      await storage.put(testKey, pending);
+      await storage.setAlarm(pending.at);
+
+      return { at: pending.at };
+    });
+  }
+
+  async alarm() {
+    const pending = await this.ctx.storage.get<PendingTest>(testKey);
+
+    if (!pending) return;
+    const ttl = Math.floor((pending.at + MINUTE_MS - Date.now()) / 1000);
+
+    const outcome =
+      ttl > 0 ? await deliverPush(this.env, pending.subscription, testMessage, ttl) : null;
+
+    if (outcome === 'delivered') console.log('Test alert delivered.');
+    else console.warn('Test alert not delivered.', outcome ?? 'expired');
+
+    await this.ctx.storage.transaction(async storage => {
+      // A press during the send schedules a new test. Keep that test.
+      if ((await storage.get<PendingTest>(testKey))?.at !== pending.at) return;
+      const retryAt = outcome && retryTestAt(pending, outcome, Date.now());
+
+      if (retryAt) {
+        await storage.setAlarm(retryAt);
+      } else {
+        await storage.delete(testKey);
+        await storage.deleteAlarm();
+      }
+    });
   }
 }
 

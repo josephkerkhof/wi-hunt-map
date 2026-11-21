@@ -83,6 +83,8 @@ Open the HTTPS site while connected. On iPhone, use Safari’s Share menu and ta
 
 To get reminders, open the bell and enable alerts for the opening or closing shown. Field Hours sends any remaining 10-, 5-, 3-, and 1-minute reminders, then sends a final alert when shooting hours start or end. The set turns off automatically. Each set uses the area and zone you confirmed when enabling it. Push delivery needs a connection. On a paired Apple Watch, notifications follow iPhone mirroring settings. [Apple Watch notifications](https://support.apple.com/en-us/108274)
 
+To check that alerts reach a device, open the bell and select **Send test alert**. Field Hours sends a test notification 2 minutes later, so you can lock the phone or leave the app first. When a push service refuses a notification, the Worker logs show its reason.
+
 If GPS is near a boundary, confirm the zone using the DNR map and choose the area and zone manually. Times are shown in Wisconsin Central time as published in the tables. Check the applicable season dates, equipment rules, and local restrictions for the hunt. [DNR deer regulations](https://dnr.wisconsin.gov/topic/hunt/deer)
 
 ## Data and yearly updates

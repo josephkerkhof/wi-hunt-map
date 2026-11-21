@@ -14,7 +14,10 @@ const samplePush = () =>
     body: Buffer.from('payload'),
   });
 
-const reply = (status: number) => () => Promise.resolve(new Response(null, { status }));
+const reply =
+  (status: number, body: string | null = null) =>
+  () =>
+    Promise.resolve(new Response(body, { status }));
 
 test('builds a push request that Workers fetch accepts', async () => {
   const request = samplePush();
@@ -66,4 +69,16 @@ test('a sent push returns the push service outcome', async () => {
   assert.equal(await sendPush(samplePush, reply(201)), 'delivered');
   assert.equal(await sendPush(samplePush, reply(410)), 'gone');
   assert.equal(await sendPush(samplePush, reply(302)), 'rejected');
+});
+
+test('a refused push logs the reason from the push service', async () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+  assert.equal(await sendPush(samplePush, reply(400, '{"reason":"BadJwtToken"}')), 'rejected');
+  assert.equal(await sendPush(samplePush, reply(503, 'Service Unavailable')), 'retry');
+
+  assert.deepEqual(warn.mock.calls, [
+    ['Push service status.', 400, 'BadJwtToken'],
+    ['Push service status.', 503, 'Service Unavailable'],
+  ]);
 });
