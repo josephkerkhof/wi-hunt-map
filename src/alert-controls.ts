@@ -12,19 +12,12 @@ import { isStandalone } from './install-platform';
 
 const storageKey = 'field-hours.alerts';
 const api = new URL('api/alerts', document.baseURI);
-const testApi = new URL('api/alerts/test-alert', document.baseURI);
 
 const eventFormat = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/Chicago',
   weekday: 'short',
   month: 'short',
   day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-});
-
-const timeFormat = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'America/Chicago',
   hour: 'numeric',
   minute: '2-digit',
 });
@@ -96,23 +89,11 @@ function isErrorResponse(data: unknown): data is { message: string } {
   );
 }
 
-function isTestResponse(data: unknown): data is { at: number } {
-  return (
-    typeof data === 'object' &&
-    data !== null &&
-    'at' in data &&
-    typeof data.at === 'number' &&
-    Number.isSafeInteger(data.at)
-  );
-}
-
-async function alertRequest<T>(
+async function requestSchedule(
   subscription: PushSubscription,
-  url: URL,
-  method: 'GET' | 'PUT' | 'POST' | 'DELETE',
-  isValid: (data: unknown) => data is T,
+  method: 'GET' | 'PUT' | 'DELETE',
   body?: string,
-): Promise<T> {
+): Promise<AlertSchedule | null> {
   const auth = subscription.toJSON().keys?.auth;
 
   if (!auth) throw new Error('This browser’s push subscription could not be used.');
@@ -124,36 +105,21 @@ async function alertRequest<T>(
     signal: AbortSignal.timeout(8000),
   };
 
-  if (body !== undefined) options.body = body;
+  if (method === 'PUT') options.body = body;
 
-  const response = await fetch(url, options).catch(() => {
+  const response = await fetch(api, options).catch(() => {
     throw new AlertRequestError('Can’t connect to the alert service. Try again.');
   });
 
   const data: unknown = await response.json().catch(() => null);
 
-  if (!response.ok || !isValid(data)) {
+  if (!response.ok || !isScheduleResponse(data)) {
     throw new AlertRequestError(
       isErrorResponse(data) ? data.message : 'Alerts are unavailable right now. Try again.',
     );
   }
 
-  return data;
-}
-
-async function requestSchedule(
-  subscription: PushSubscription,
-  method: 'GET' | 'PUT' | 'DELETE',
-  body?: string,
-): Promise<AlertSchedule | null> {
-  return (await alertRequest(subscription, api, method, isScheduleResponse, body)).schedule;
-}
-
-/** Returns the time when the server sends the test alert. */
-async function requestTest(subscription: PushSubscription) {
-  const body = JSON.stringify({ subscription: subscription.toJSON() });
-
-  return (await alertRequest(subscription, testApi, 'POST', isTestResponse, body)).at;
+  return data.schedule;
 }
 
 // iPhone and iPad allow Web Push only in Home Screen apps.
@@ -179,25 +145,6 @@ function sameKey(key: ArrayBuffer | null, expected: Uint8Array) {
   return bytes.every((byte, index) => byte === expected[index]);
 }
 
-/** Returns a push subscription for the current server key. Asks for permission when needed. */
-async function subscribe(
-  registration: ServiceWorkerRegistration,
-  publicKey: Uint8Array<ArrayBuffer>,
-) {
-  const existing = await waitForBrowser(registration.pushManager.getSubscription());
-
-  // Subscribing with a new server key fails while the old subscription exists.
-  if (existing && !sameKey(existing.options.applicationServerKey, publicKey)) {
-    await requestSchedule(existing, 'DELETE').catch(() => null);
-    await waitForBrowser(existing.unsubscribe());
-  }
-
-  return waitForBrowser(
-    registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: publicKey }),
-    30_000,
-  );
-}
-
 const stoppedMessage =
   'Alerts stopped because this device’s notification subscription changed. Turn them on again.';
 
@@ -215,11 +162,10 @@ export function setupAlertControls(onArmedChange: (armed: boolean) => void) {
   const enable = $('enable-alerts', HTMLButtonElement);
   const disable = $('disable-alerts', HTMLButtonElement);
   const retry = $('retry-alerts', HTMLButtonElement);
-  const test = $('test-alert', HTMLButtonElement);
-  const actions = [enable, disable, test, retry];
+  const actions = [enable, disable, retry];
   const unsupported = supportMessage();
   $('alert-install').hidden = !needsHomeScreen;
-  let busy: 'enable' | 'disable' | 'test' | null = null;
+  let busy: 'enable' | 'disable' | null = null;
   let refreshing = false;
   let refreshFailed = false;
   let actionVersion = 0;
@@ -316,11 +262,9 @@ export function setupAlertControls(onArmedChange: (armed: boolean) => void) {
         ? 'Turning alerts on…'
         : busy === 'disable'
           ? 'Turning alerts off…'
-          : busy === 'test'
-            ? 'Scheduling a test alert…'
-            : loadingConfiguration || (refreshing && (!registration?.active || refreshFailed))
-              ? 'Checking alerts…'
-              : '';
+          : loadingConfiguration || (refreshing && (!registration?.active || refreshFailed))
+            ? 'Checking alerts…'
+            : '';
 
     const retryStatus = refreshFailed && (active || !registration?.active);
 
@@ -338,8 +282,6 @@ export function setupAlertControls(onArmedChange: (armed: boolean) => void) {
       'aria-disabled',
       String(!navigator.onLine || busy !== null || !registration?.active),
     );
-    test.hidden = Boolean(unsupported) || configurationFailed;
-    test.setAttribute('aria-disabled', String(Boolean(blocked || busy)));
     retry.hidden = !configurationFailed && !retryStatus;
     retry.setAttribute(
       'aria-disabled',
@@ -441,7 +383,21 @@ export function setupAlertControls(onArmedChange: (armed: boolean) => void) {
     render();
 
     try {
-      const subscription = await subscribe(registration, publicKey);
+      const existing = await waitForBrowser(registration.pushManager.getSubscription());
+
+      // Subscribing with a new server key fails while the old subscription exists.
+      if (existing && !sameKey(existing.options.applicationServerKey, publicKey)) {
+        await requestSchedule(existing, 'DELETE').catch(() => null);
+        await waitForBrowser(existing.unsubscribe());
+      }
+
+      const subscription = await waitForBrowser(
+        registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: publicKey,
+        }),
+        30_000,
+      );
 
       const body = JSON.stringify({
         area,
@@ -466,32 +422,6 @@ export function setupAlertControls(onArmedChange: (armed: boolean) => void) {
       render();
 
       if (message) void refresh();
-    }
-  });
-
-  test.addEventListener('click', async () => {
-    if (!publicKey || !registration || test.getAttribute('aria-disabled') === 'true') return;
-    actionVersion++;
-    busy = 'test';
-    message = '';
-    render();
-
-    try {
-      const at = await requestTest(await subscribe(registration, publicKey));
-      message = `Test alert scheduled for ${timeFormat.format(at)} CT. Lock your phone or leave Field Hours to check that it arrives.`;
-    } catch (error) {
-      message =
-        Notification.permission === 'denied'
-          ? 'Allow notifications in your device or browser settings.'
-          : error instanceof AlertRequestError
-            ? error.message
-            : 'Couldn’t schedule a test alert. Try again.';
-      console.warn('Couldn’t schedule a test alert.', error);
-    } finally {
-      busy = null;
-      render();
-      // Subscribing can replace an old subscription, so check the alert status again.
-      void refresh();
     }
   });
 

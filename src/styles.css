@@ -378,8 +378,7 @@ h3 {
   margin-block-start: 0;
 }
 
-#disable-alerts[aria-disabled='true'],
-#test-alert[aria-disabled='true'] {
+#disable-alerts[aria-disabled='true'] {
   border-color: var(--neutral);
   color: var(--muted);
 }

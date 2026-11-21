@@ -7,14 +7,13 @@
   "preview_urls": false,
   "routes": [{ "pattern": "deer.kerkhof.dev/api/alerts*", "zone_name": "kerkhof.dev" }],
   "durable_objects": {
-    "bindings": [
-      { "name": "ALERTS", "class_name": "EventAlerts" },
-      { "name": "TEST_ALERTS", "class_name": "TestAlerts" },
-    ],
+    "bindings": [{ "name": "ALERTS", "class_name": "EventAlerts" }],
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["EventAlerts"] },
     { "tag": "v2", "new_sqlite_classes": ["TestAlerts"] },
+    // The test alert button was removed. This deletes its Durable Object class and storage.
+    { "tag": "v3", "deleted_classes": ["TestAlerts"] },
   ],
   // Limits per client IP. Mobile carriers can share an IP, so the read limit is generous.
   "ratelimits": [

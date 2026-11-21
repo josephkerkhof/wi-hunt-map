@@ -55,7 +55,7 @@ wrangler pages deploy dist --project-name=wi-hunt-map --branch=main
 
 ### Deploy the alert Worker
 
-The Worker handles `/api/alerts` on the production hostname. A Durable Object stores each device’s next event and wakes at its reminder times and at the event itself. The Worker and app use the same bundled hours.
+The Worker handles `/api/alerts` on the production hostname. A Durable Object stores each device’s next event and wakes at its reminder times and at the event itself. The Worker and app use the same bundled hours. When a push service refuses an alert, the Worker logs show its reason.
 
 1. Generate a dedicated production VAPID key pair with `npm exec -- web-push generate-vapid-keys --json`. Store them as `VAPID_PUBLIC_KEY=…` and `VAPID_PRIVATE_KEY=…` lines in a private `.env` file outside this repository. Keep the key pair for future deployments so browser subscriptions continue to work.
 2. Upload the Worker and its secrets from an authenticated Wrangler session.
@@ -82,8 +82,6 @@ For manual releases after setup, run `wrangler deploy --config worker/wrangler.j
 Open the HTTPS site while connected. On iPhone, use Safari’s Share menu and tap **Add to Home Screen**. On Android, use Chrome’s **Install app** or **Add to Home screen**. Open the installed app while online and set your hunt location. Try reopening it in airplane mode before leaving. If the phone can’t get a GPS fix, the saved zone and the manual picker work offline. The browser can remove downloaded data when site storage is cleared.
 
 To get reminders, open the bell and enable alerts for the opening or closing shown. Field Hours sends any remaining 10-, 5-, 3-, and 1-minute reminders, then sends a final alert when shooting hours start or end. The set turns off automatically. Each set uses the area and zone you confirmed when enabling it. Push delivery needs a connection. On a paired Apple Watch, notifications follow iPhone mirroring settings. [Apple Watch notifications](https://support.apple.com/en-us/108274)
-
-To check that alerts reach a device, open the bell and select **Send test alert**. Field Hours sends a test notification 2 minutes later, so you can lock the phone or leave the app first. When a push service refuses a notification, the Worker logs show its reason.
 
 If GPS is near a boundary, confirm the zone using the DNR map and choose the area and zone manually. Times are shown in Wisconsin Central time as published in the tables. Check the applicable season dates, equipment rules, and local restrictions for the hunt. [DNR deer regulations](https://dnr.wisconsin.gov/topic/hunt/deer)
 
