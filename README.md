@@ -4,6 +4,8 @@ Field Hours is a progressive web app (PWA) to help Wisconsin deer hunters know p
 
 <img width="1382" height="1340" alt="image" src="https://github.com/user-attachments/assets/e246acab-cd32-4db0-af54-9b3276fed853" />
 
+You may view it [here](https://deer.kerkhof.dev).
+
 ## Motivation
 
 The Wisconsin DNR annually publishes a hunting regulations brochure which includes a lookup table with your shooting hours. The steps are straightforward, but can be cumbersome and tedious when the hunter is in the field. The steps go as follows:
@@ -15,11 +17,13 @@ The Wisconsin DNR annually publishes a hunting regulations brochure which includ
 
 <img width="660" height="898" alt="Wisconsin DNR Hunting Area and Zone map" src="https://github.com/user-attachments/assets/e07f046d-8e54-495e-a4d6-470075868a28" />
 
-This is a trivial algorithm, but a bit of a pain in the field.
+This is a simple algorithm, but a bit of a pain in the field.
 
 This PWA uses the phone's location services to determine your zone and offset, and using the date gives you the correct shooting hours.
 
-If the user installs the PWA to their phone, the PWA can provide further utility by sending push notifications at 10, 5, 3, and 1 minute increments before shooting starts or stops for the day.
+Because this is a PWA, the view and logic can be served locally without an active network connection. This is particularly useful out in the field because cell phone coverage tends to be spotty.
+
+If the hunter installs the PWA to their phone, the PWA can provide further utility by sending push notifications at 10, 5, 3, and 1 minute increments before shooting starts or stops for the day. An active network connection in the field is required for push notifications to work properly. Push notifications are delivered using CloudFlare Durable Objects and Workers.
 
 ## Development
 
@@ -45,3 +49,7 @@ Use `--event` to preview the notification sent when shooting hours start or end.
 devenv shell -- test-notification --event opening
 devenv shell -- test-notification --event closing
 ```
+
+## Disclaimer
+
+This project is not affiliated with the Wisconsin DNR.
